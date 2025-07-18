@@ -208,6 +208,7 @@ class WebRTCChat {
         // Close existing SFU connection and create new one
         if (this.sfuConnection) {
             this.sfuConnection.close();
+            this.sfuConnection = null;
         }
         this.remoteAudioContainer.innerHTML = '';
         
@@ -296,6 +297,13 @@ class WebRTCChat {
 
 
     async connectToSFU(channelId) {
+        // Prevent duplicate connections
+        if (this.sfuConnection && this.sfuConnection.connectionState !== 'closed') {
+            console.log('SFU connection already exists, skipping');
+            return;
+        }
+        
+        console.log(`Attempting to connect to SFU for channel: ${channelId}, clientId: ${this.clientId}`);
         try {
             // Create new peer connection to SFU
             this.sfuConnection = new RTCPeerConnection({
@@ -304,23 +312,32 @@ class WebRTCChat {
                 ]
             });
 
+            console.log('Created RTCPeerConnection');
+
             // Add local stream to connection
             if (this.localStream) {
                 this.localStream.getTracks().forEach(track => {
+                    console.log(`Adding track to SFU connection: ${track.kind}`);
                     this.sfuConnection.addTrack(track, this.localStream);
                 });
+            } else {
+                console.warn('No local stream available for SFU connection');
             }
 
             // Handle incoming streams from SFU
             this.sfuConnection.ontrack = (event) => {
+                console.log('Received track from SFU:', event.track.kind);
                 this.handleRemoteStream(event.streams[0], 'sfu-stream');
             };
 
             // Create offer and send to SFU
+            console.log('Creating offer...');
             const offer = await this.sfuConnection.createOffer();
             await this.sfuConnection.setLocalDescription(offer);
+            console.log('Created and set local description');
 
             // Send offer to SFU server
+            console.log('Sending offer to SFU server...');
             const response = await fetch('/sfu', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -332,12 +349,17 @@ class WebRTCChat {
                 })
             });
 
+            console.log('SFU response status:', response.status);
+
             if (response.ok) {
                 const data = await response.json();
+                console.log('SFU response data:', data);
                 if (data.type === 'answer') {
                     await this.sfuConnection.setRemoteDescription(data.sdp);
                     console.log('Connected to SFU successfully');
                 }
+            } else {
+                console.error('SFU request failed:', response.status, response.statusText);
             }
         } catch (error) {
             console.error('Error connecting to SFU:', error);

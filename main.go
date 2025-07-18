@@ -417,16 +417,22 @@ type SFUSignalingResponse struct {
 }
 
 func handleSFUSignaling(w http.ResponseWriter, r *http.Request) {
+	log.Printf("SFU signaling request received from %s", r.RemoteAddr)
 	w.Header().Set("Content-Type", "application/json")
 	
 	var req SFUSignalingRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("Failed to decode SFU request: %v", err)
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
+	
+	log.Printf("SFU request: Type=%s, ClientID=%s, Channel=%s", req.Type, req.ClientID, req.Channel)
 
 	switch req.Type {
 	case "offer":
+		log.Printf("Processing offer from client %s", req.ClientID)
+		
 		// Create WebRTC peer connection
 		peerConnection, err := webrtc.NewPeerConnection(webrtc.Configuration{
 			ICEServers: []webrtc.ICEServer{
@@ -436,21 +442,20 @@ func handleSFUSignaling(w http.ResponseWriter, r *http.Request) {
 			},
 		})
 		if err != nil {
+			log.Printf("Failed to create peer connection: %v", err)
 			http.Error(w, "Failed to create peer connection", http.StatusInternalServerError)
 			return
 		}
+		log.Printf("Created peer connection for client %s", req.ClientID)
 
-		// Store peer connection for this client
-		peerConnections[req.ClientID] = peerConnection
-
-		// Add all existing tracks from other clients to this connection
-		for otherClientID, track := range clientTracks {
-			if otherClientID != req.ClientID {
-				_, err := peerConnection.AddTrack(track)
-				if err != nil {
-					log.Printf("Error adding track: %v", err)
-				}
-			}
+		// Add a transceiver to ensure bidirectional audio
+		_, err = peerConnection.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{
+			Direction: webrtc.RTPTransceiverDirectionSendrecv,
+		})
+		if err != nil {
+			log.Printf("Error adding audio transceiver: %v", err)
+		} else {
+			log.Printf("Added audio transceiver for client %s", req.ClientID)
 		}
 
 		// Handle incoming tracks from this client
@@ -494,31 +499,61 @@ func handleSFUSignaling(w http.ResponseWriter, r *http.Request) {
 			}()
 		})
 
+		// Add all existing tracks from other clients to this connection BEFORE setting remote description
+		for otherClientID, track := range clientTracks {
+			if otherClientID != req.ClientID {
+				_, err := peerConnection.AddTrack(track)
+				if err != nil {
+					log.Printf("Error adding track from client %s: %v", otherClientID, err)
+				} else {
+					log.Printf("Added track from client %s to client %s", otherClientID, req.ClientID)
+				}
+			}
+		}
+
+		// Store peer connection for this client
+		peerConnections[req.ClientID] = peerConnection
+		log.Printf("Stored peer connection for client %s", req.ClientID)
+
 		// Set remote description (client's offer)
+		log.Printf("Setting remote description for client %s", req.ClientID)
 		if err := peerConnection.SetRemoteDescription(*req.SDP); err != nil {
+			log.Printf("Failed to set remote description: %v", err)
 			http.Error(w, "Failed to set remote description", http.StatusInternalServerError)
 			return
 		}
+		log.Printf("Set remote description successfully for client %s", req.ClientID)
 
 		// Create answer
+		log.Printf("Creating answer for client %s", req.ClientID)
 		answer, err := peerConnection.CreateAnswer(nil)
 		if err != nil {
+			log.Printf("Failed to create answer: %v", err)
 			http.Error(w, "Failed to create answer", http.StatusInternalServerError)
 			return
 		}
+		log.Printf("Created answer successfully for client %s", req.ClientID)
 
 		// Set local description
+		log.Printf("Setting local description for client %s", req.ClientID)
 		if err := peerConnection.SetLocalDescription(answer); err != nil {
+			log.Printf("Failed to set local description: %v", err)
 			http.Error(w, "Failed to set local description", http.StatusInternalServerError)
 			return
 		}
+		log.Printf("Set local description successfully for client %s", req.ClientID)
 
 		// Send answer back to client
+		log.Printf("Sending answer response to client %s", req.ClientID)
 		resp := SFUSignalingResponse{
 			Type: "answer",
 			SDP:  &answer,
 		}
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			log.Printf("Failed to encode response: %v", err)
+		} else {
+			log.Printf("Successfully sent answer to client %s", req.ClientID)
+		}
 
 	default:
 		http.Error(w, "Unknown signaling type", http.StatusBadRequest)
