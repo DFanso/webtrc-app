@@ -26,7 +26,8 @@ var (
 	clients = make(map[*websocket.Conn]bool)
 	channels = make(map[string]map[*websocket.Conn]*User)
 	broadcast = make(chan Message)
-	peerConnections = make(map[string]*webrtc.PeerConnection) // Map channel -> peer connection
+	peerConnections = make(map[string]*webrtc.PeerConnection) // Map clientID -> peer connection
+	clientTracks = make(map[string]*webrtc.TrackLocalStaticRTP) // Map clientID -> local track
 )
 
 type User struct {
@@ -404,9 +405,10 @@ func broadcastToChannel(channelID string, msg Message) {
 }
 
 type SFUSignalingRequest struct {
-	Type    string                 `json:"type"`
-	SDP     *webrtc.SessionDescription `json:"sdp,omitempty"`
-	Channel string                 `json:"channel"`
+	Type     string                 `json:"type"`
+	SDP      *webrtc.SessionDescription `json:"sdp,omitempty"`
+	Channel  string                 `json:"channel"`
+	ClientID string                 `json:"clientId"`
 }
 
 type SFUSignalingResponse struct {
@@ -438,13 +440,58 @@ func handleSFUSignaling(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Store peer connection for this channel
-		peerConnections[req.Channel] = peerConnection
+		// Store peer connection for this client
+		peerConnections[req.ClientID] = peerConnection
 
-		// Handle incoming tracks
+		// Add all existing tracks from other clients to this connection
+		for otherClientID, track := range clientTracks {
+			if otherClientID != req.ClientID {
+				_, err := peerConnection.AddTrack(track)
+				if err != nil {
+					log.Printf("Error adding track: %v", err)
+				}
+			}
+		}
+
+		// Handle incoming tracks from this client
 		peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-			log.Printf("Received track: %s", track.ID())
-			// Here you would implement SFU logic to forward tracks to other peers
+			log.Printf("Received track from client %s: %s", req.ClientID, track.ID())
+			
+			// Create local track to forward to other clients
+			localTrack, err := webrtc.NewTrackLocalStaticRTP(track.Codec().RTPCodecCapability, track.ID(), track.StreamID())
+			if err != nil {
+				log.Printf("Error creating local track: %v", err)
+				return
+			}
+			
+			// Store this client's track
+			clientTracks[req.ClientID] = localTrack
+			
+			// Add this track to all other peer connections
+			for otherClientID, otherPC := range peerConnections {
+				if otherClientID != req.ClientID {
+					_, err := otherPC.AddTrack(localTrack)
+					if err != nil {
+						log.Printf("Error adding track to client %s: %v", otherClientID, err)
+					}
+				}
+			}
+			
+			// Forward packets from remote track to local track
+			go func() {
+				for {
+					rtpPacket, _, err := track.ReadRTP()
+					if err != nil {
+						log.Printf("Error reading RTP packet: %v", err)
+						break
+					}
+					
+					if err := localTrack.WriteRTP(rtpPacket); err != nil {
+						log.Printf("Error writing RTP packet: %v", err)
+						break
+					}
+				}
+			}()
 		})
 
 		// Set remote description (client's offer)

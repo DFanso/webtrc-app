@@ -7,9 +7,14 @@ class WebRTCChat {
         this.currentChannel = 'general';
         this.isMuted = false;
         this.isLoggedIn = false;
+        this.clientId = this.generateClientId(); // Unique client ID
         
         this.initUI();
         this.setupEventListeners();
+    }
+
+    generateClientId() {
+        return 'client_' + Math.random().toString(36).substr(2, 9);
     }
 
     initUI() {
@@ -322,7 +327,8 @@ class WebRTCChat {
                 body: JSON.stringify({
                     type: 'offer',
                     sdp: offer,
-                    channel: channelId
+                    channel: channelId,
+                    clientId: this.clientId
                 })
             });
 
