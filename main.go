@@ -195,10 +195,27 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Println(err)
 			delete(clients, conn)
+			
+			// Remove user from all channels
+			for channelID, channelUsers := range channels {
+				if user, exists := channelUsers[conn]; exists {
+					delete(channelUsers, conn)
+					// Notify other users in the channel
+					leaveMsg := Message{
+						Type:      "user_left",
+						Username:  user.Username,
+						Channel:   channelID,
+						Timestamp: time.Now(),
+					}
+					broadcastToChannel(channelID, leaveMsg)
+				}
+			}
 			break
 		}
 
 		msg.Timestamp = time.Now()
+		
+		log.Printf("Received message: Type=%s, Username=%s, Channel=%s, Content=%s", msg.Type, msg.Username, msg.Channel, msg.Content)
 		
 		switch msg.Type {
 		case "join_channel":
@@ -215,12 +232,14 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 func joinChannel(conn *websocket.Conn, username, channelID string) {
+	log.Printf("User %s joining channel %s", username, channelID)
 	if channels[channelID] == nil {
 		channels[channelID] = make(map[*websocket.Conn]*User)
 	}
 	
 	user := &User{Username: username, Conn: conn}
 	channels[channelID][conn] = user
+	log.Printf("Channel %s now has %d users", channelID, len(channels[channelID]))
 
 	msg := Message{
 		Type:      "user_joined",
@@ -255,19 +274,52 @@ func saveMessage(msg Message) {
 }
 
 func handleWebRTCSignaling(msg Message) {
-	broadcastToChannel(msg.Channel, msg)
+	data, ok := msg.Data.(map[string]interface{})
+	if !ok {
+		log.Println("Invalid WebRTC message data")
+		return
+	}
+	
+	targetUser, ok := data["targetUser"].(string)
+	if !ok {
+		log.Println("No target user specified for WebRTC message")
+		return
+	}
+	
+	// Find the target user's connection in the channel
+	if channelUsers, exists := channels[msg.Channel]; exists {
+		for conn, user := range channelUsers {
+			if user.Username == targetUser {
+				err := conn.WriteJSON(msg)
+				if err != nil {
+					log.Println("Error sending WebRTC message:", err)
+					conn.Close()
+					delete(channelUsers, conn)
+				}
+				return
+			}
+		}
+	}
+	
+	log.Printf("Target user %s not found in channel %s", targetUser, msg.Channel)
 }
 
 func broadcastToChannel(channelID string, msg Message) {
+	log.Printf("Broadcasting message to channel %s: %+v", channelID, msg)
 	if channels[channelID] != nil {
+		log.Printf("Channel %s has %d users", channelID, len(channels[channelID]))
 		for conn := range channels[channelID] {
 			err := conn.WriteJSON(msg)
 			if err != nil {
-				log.Println(err)
+				log.Println("Error sending message to user:", err)
 				conn.Close()
 				delete(channels[channelID], conn)
+			} else {
+				log.Println("Message sent successfully to user")
 			}
 		}
+	} else {
+		log.Printf("Channel %s not found", channelID)
 	}
 }
 

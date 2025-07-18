@@ -46,9 +46,13 @@ class WebRTCChat {
         this.disconnectBtn.addEventListener('click', () => this.disconnect());
         
         this.channelsList.addEventListener('click', (e) => {
+            console.log('Channel clicked:', e.target);
             if (e.target.classList.contains('channel-item')) {
                 const channel = e.target.dataset.channel;
+                console.log('Joining channel:', channel);
                 this.joinChannel(channel);
+            } else {
+                console.log('Target does not have channel-item class');
             }
         });
     }
@@ -120,22 +124,16 @@ class WebRTCChat {
                 audio: true, 
                 video: false 
             });
-            
-            this.connectWebSocket();
-            this.authSection.classList.add('hidden');
-            this.chatSection.classList.remove('hidden');
-            this.currentUserSpan.textContent = this.currentUser;
-            this.isLoggedIn = true;
-            
-            this.joinChannel('general');
         } catch (error) {
             this.showAuthMessage('Microphone access denied. Voice chat will not work.', 'error');
-            this.connectWebSocket();
-            this.authSection.classList.add('hidden');
-            this.chatSection.classList.remove('hidden');
-            this.currentUserSpan.textContent = this.currentUser;
-            this.isLoggedIn = true;
         }
+        
+        this.authSection.classList.add('hidden');
+        this.chatSection.classList.remove('hidden');
+        this.currentUserSpan.textContent = this.currentUser;
+        this.isLoggedIn = true;
+        
+        this.connectWebSocket();
     }
 
     connectWebSocket() {
@@ -144,6 +142,10 @@ class WebRTCChat {
         
         this.ws.onopen = () => {
             console.log('WebSocket connected');
+            if (this.isLoggedIn) {
+                this.currentChannel = null; // Force a fresh join
+                this.joinChannel('general');
+            }
         };
         
         this.ws.onmessage = (event) => {
@@ -162,6 +164,7 @@ class WebRTCChat {
     }
 
     handleMessage(message) {
+        console.log('Received message:', message);
         switch (message.type) {
             case 'message':
                 this.displayMessage(message);
@@ -187,9 +190,14 @@ class WebRTCChat {
     }
 
     joinChannel(channelId) {
-        if (this.currentChannel === channelId) return;
+        console.log('joinChannel called with:', channelId, 'current:', this.currentChannel);
+        if (this.currentChannel === channelId) {
+            console.log('Already in channel, returning');
+            return;
+        }
         
         if (this.currentChannel) {
+            console.log('Leaving current channel:', this.currentChannel);
             this.sendWebSocketMessage({
                 type: 'leave_channel',
                 username: this.currentUser,
@@ -202,6 +210,7 @@ class WebRTCChat {
         this.messagesDiv.innerHTML = '';
         this.usersList.innerHTML = '';
         
+        console.log('Joining channel:', channelId);
         this.sendWebSocketMessage({
             type: 'join_channel',
             username: this.currentUser,
@@ -220,6 +229,8 @@ class WebRTCChat {
         const content = this.messageInput.value.trim();
         if (!content) return;
         
+        console.log('Sending message:', content, 'User:', this.currentUser, 'Channel:', this.currentChannel);
+        
         this.sendWebSocketMessage({
             type: 'message',
             username: this.currentUser,
@@ -232,7 +243,10 @@ class WebRTCChat {
 
     sendWebSocketMessage(message) {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            console.log('Sending message:', message);
             this.ws.send(JSON.stringify(message));
+        } else {
+            console.error('WebSocket not connected. State:', this.ws ? this.ws.readyState : 'null');
         }
     }
 
@@ -444,8 +458,8 @@ class WebRTCChat {
                 this.isMuted = !audioTrack.enabled;
                 this.muteBtn.textContent = this.isMuted ? '🔇' : '🎤';
                 this.muteBtn.className = this.isMuted ? 
-                    'px-3 py-1 bg-gray-600 text-white rounded hover:bg-gray-700' : 
-                    'px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700';
+                    'px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700' : 
+                    'px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700';
             }
         }
     }
