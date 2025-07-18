@@ -46,13 +46,9 @@ class WebRTCChat {
         this.disconnectBtn.addEventListener('click', () => this.disconnect());
         
         this.channelsList.addEventListener('click', (e) => {
-            console.log('Channel clicked:', e.target);
             if (e.target.classList.contains('channel-item')) {
                 const channel = e.target.dataset.channel;
-                console.log('Joining channel:', channel);
                 this.joinChannel(channel);
-            } else {
-                console.log('Target does not have channel-item class');
             }
         });
     }
@@ -141,7 +137,6 @@ class WebRTCChat {
         this.ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
         
         this.ws.onopen = () => {
-            console.log('WebSocket connected');
             if (this.isLoggedIn) {
                 this.currentChannel = null; // Force a fresh join
                 this.joinChannel('general');
@@ -154,7 +149,6 @@ class WebRTCChat {
         };
         
         this.ws.onclose = () => {
-            console.log('WebSocket disconnected');
             setTimeout(() => this.connectWebSocket(), 3000);
         };
         
@@ -164,7 +158,6 @@ class WebRTCChat {
     }
 
     handleMessage(message) {
-        console.log('Received message:', message);
         switch (message.type) {
             case 'message':
                 this.displayMessage(message);
@@ -193,14 +186,11 @@ class WebRTCChat {
     }
 
     joinChannel(channelId) {
-        console.log('joinChannel called with:', channelId, 'current:', this.currentChannel);
         if (this.currentChannel === channelId) {
-            console.log('Already in channel, returning');
             return;
         }
         
         if (this.currentChannel) {
-            console.log('Leaving current channel:', this.currentChannel);
             this.sendWebSocketMessage({
                 type: 'leave_channel',
                 username: this.currentUser,
@@ -213,7 +203,6 @@ class WebRTCChat {
         this.messagesDiv.innerHTML = '';
         this.usersList.innerHTML = '';
         
-        console.log('Joining channel:', channelId);
         this.sendWebSocketMessage({
             type: 'join_channel',
             username: this.currentUser,
@@ -232,8 +221,6 @@ class WebRTCChat {
         const content = this.messageInput.value.trim();
         if (!content) return;
         
-        console.log('Sending message:', content, 'User:', this.currentUser, 'Channel:', this.currentChannel);
-        
         this.sendWebSocketMessage({
             type: 'message',
             username: this.currentUser,
@@ -246,7 +233,6 @@ class WebRTCChat {
 
     sendWebSocketMessage(message) {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            console.log('Sending message:', message);
             this.ws.send(JSON.stringify(message));
         } else {
             console.error('WebSocket not connected. State:', this.ws ? this.ws.readyState : 'null');
@@ -277,7 +263,6 @@ class WebRTCChat {
     }
 
     updateUserList(userList) {
-        console.log('Updating user list:', userList);
         this.usersList.innerHTML = '';
         
         userList.forEach(username => {
@@ -298,7 +283,13 @@ class WebRTCChat {
         this.usersList.appendChild(userDiv);
         
         if (username !== this.currentUser && this.localStream) {
-            this.createPeerConnection(username);
+            // Add a small delay to prevent race conditions when multiple users join
+            setTimeout(() => {
+                // Only create connection if user is the "initiator" (lexicographically smaller username)
+                if (this.currentUser < username) {
+                    this.createPeerConnection(username);
+                }
+            }, 100);
         }
     }
 
@@ -359,9 +350,11 @@ class WebRTCChat {
         };
         
         try {
+            console.log(`Creating offer for ${username}`);
             const offer = await peerConnection.createOffer();
             await peerConnection.setLocalDescription(offer);
             
+            console.log(`Sending offer to ${username}`);
             this.sendWebSocketMessage({
                 type: 'webrtc_offer',
                 username: this.currentUser,
@@ -379,8 +372,11 @@ class WebRTCChat {
     async handleWebRTCOffer(message) {
         if (message.data.targetUser !== this.currentUser) return;
         
+        console.log(`Handling offer from ${message.username}`);
+        
         // Close existing peer connection if it exists
         if (this.peerConnections.has(message.username)) {
+            console.log(`Closing existing peer connection for ${message.username}`);
             this.peerConnections.get(message.username).close();
             this.peerConnections.delete(message.username);
         }
@@ -418,10 +414,14 @@ class WebRTCChat {
         };
         
         try {
+            console.log(`Setting remote description from offer by ${message.username}`);
             await peerConnection.setRemoteDescription(message.data.offer);
+            
+            console.log(`Creating answer for ${message.username}`);
             const answer = await peerConnection.createAnswer();
             await peerConnection.setLocalDescription(answer);
             
+            console.log(`Sending answer to ${message.username}`);
             this.sendWebSocketMessage({
                 type: 'webrtc_answer',
                 username: this.currentUser,
@@ -441,16 +441,22 @@ class WebRTCChat {
         
         const peerConnection = this.peerConnections.get(message.username);
         if (peerConnection) {
+            console.log(`Handling answer from ${message.username}, current state: ${peerConnection.signalingState}`);
             try {
                 // Check if we're in the right state to set remote description
                 if (peerConnection.signalingState === 'have-local-offer') {
                     await peerConnection.setRemoteDescription(message.data.answer);
+                    console.log(`Successfully set remote description for ${message.username}`);
                 } else {
-                    console.warn(`Cannot set remote description, peer connection in state: ${peerConnection.signalingState}`);
+                    console.warn(`Cannot set remote description for ${message.username}, peer connection in state: ${peerConnection.signalingState}`);
+                    // If we're in stable state, this means we might have missed the offer or there's a race condition
+                    // Let's ignore this answer as it's likely stale
                 }
             } catch (error) {
                 console.error('Error handling answer:', error);
             }
+        } else {
+            console.warn(`No peer connection found for ${message.username}`);
         }
     }
 
