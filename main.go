@@ -231,6 +231,46 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func sendRecentMessages(conn *websocket.Conn, channelID string) {
+	rows, err := db.Query("SELECT username, content, created_at FROM messages WHERE channel_id = ? ORDER BY created_at DESC LIMIT 50", channelID)
+	if err != nil {
+		log.Println("Error querying messages:", err)
+		return
+	}
+	defer rows.Close()
+
+	var messages []Message
+	for rows.Next() {
+		var msg Message
+		var createdAt string
+		err := rows.Scan(&msg.Username, &msg.Content, &createdAt)
+		if err != nil {
+			log.Println("Error scanning message:", err)
+			continue
+		}
+		
+		timestamp, err := time.Parse("2006-01-02 15:04:05", createdAt)
+		if err != nil {
+			log.Println("Error parsing timestamp:", err)
+			continue
+		}
+		
+		msg.Type = "message"
+		msg.Channel = channelID
+		msg.Timestamp = timestamp
+		messages = append(messages, msg)
+	}
+	
+	// Send messages in chronological order (reverse the slice)
+	for i := len(messages) - 1; i >= 0; i-- {
+		err := conn.WriteJSON(messages[i])
+		if err != nil {
+			log.Println("Error sending message:", err)
+			break
+		}
+	}
+}
+
 func joinChannel(conn *websocket.Conn, username, channelID string) {
 	log.Printf("User %s joining channel %s", username, channelID)
 	if channels[channelID] == nil {
@@ -241,6 +281,27 @@ func joinChannel(conn *websocket.Conn, username, channelID string) {
 	channels[channelID][conn] = user
 	log.Printf("Channel %s now has %d users", channelID, len(channels[channelID]))
 
+	// Send current user list to the new user
+	var userList []string
+	for _, u := range channels[channelID] {
+		userList = append(userList, u.Username)
+	}
+	
+	userListMsg := Message{
+		Type:      "user_list",
+		Channel:   channelID,
+		Timestamp: time.Now(),
+		Data:      userList,
+	}
+	err := conn.WriteJSON(userListMsg)
+	if err != nil {
+		log.Println("Error sending user list:", err)
+	}
+
+	// Send recent messages to the new user
+	sendRecentMessages(conn, channelID)
+
+	// Notify other users that this user joined
 	msg := Message{
 		Type:      "user_joined",
 		Username:  username,

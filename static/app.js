@@ -169,6 +169,9 @@ class WebRTCChat {
             case 'message':
                 this.displayMessage(message);
                 break;
+            case 'user_list':
+                this.updateUserList(message.data);
+                break;
             case 'user_joined':
                 this.addUserToList(message.username);
                 this.displaySystemMessage(`${message.username} joined the channel`);
@@ -271,6 +274,15 @@ class WebRTCChat {
         messageDiv.textContent = content;
         this.messagesDiv.appendChild(messageDiv);
         this.messagesDiv.scrollTop = this.messagesDiv.scrollHeight;
+    }
+
+    updateUserList(userList) {
+        console.log('Updating user list:', userList);
+        this.usersList.innerHTML = '';
+        
+        userList.forEach(username => {
+            this.addUserToList(username);
+        });
     }
 
     addUserToList(username) {
