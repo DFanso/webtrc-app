@@ -368,15 +368,39 @@ class WebRTCChat {
 
 
     handleRemoteStream(stream, username) {
+        console.log(`Handling remote stream for ${username}:`, stream);
+        console.log(`Stream has ${stream.getTracks().length} tracks`);
+        
         let audioElement = document.getElementById(`audio-${username}`);
         if (!audioElement) {
+            console.log(`Creating new audio element for ${username}`);
             audioElement = document.createElement('audio');
             audioElement.id = `audio-${username}`;
             audioElement.autoplay = true;
+            audioElement.controls = true; // Add controls for debugging
             audioElement.className = 'user-audio';
+            audioElement.style.display = 'block'; // Make visible for debugging
             this.remoteAudioContainer.appendChild(audioElement);
         }
+        
         audioElement.srcObject = stream;
+        
+        // Add event listeners for debugging
+        audioElement.addEventListener('loadedmetadata', () => {
+            console.log(`Audio element loaded metadata for ${username}`);
+        });
+        
+        audioElement.addEventListener('canplay', () => {
+            console.log(`Audio element can play for ${username}`);
+        });
+        
+        audioElement.addEventListener('play', () => {
+            console.log(`Audio element started playing for ${username}`);
+        });
+        
+        audioElement.addEventListener('error', (e) => {
+            console.error(`Audio element error for ${username}:`, e);
+        });
     }
 
     toggleMute() {

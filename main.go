@@ -433,7 +433,7 @@ func handleSFUSignaling(w http.ResponseWriter, r *http.Request) {
 
 		// Handle incoming tracks from this client
 		peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-			log.Printf("Received track from client %s: %s", req.ClientID, track.ID())
+			log.Printf("Received track from client %s: %s, codec: %s", req.ClientID, track.ID(), track.Codec().MimeType)
 			
 			// Create local track to forward to other clients
 			localTrack, err := webrtc.NewTrackLocalStaticRTP(track.Codec().RTPCodecCapability, track.ID(), track.StreamID())
@@ -444,16 +444,22 @@ func handleSFUSignaling(w http.ResponseWriter, r *http.Request) {
 			
 			// Store this client's track
 			clientTracks[req.ClientID] = localTrack
+			log.Printf("Stored track for client %s", req.ClientID)
 			
 			// Add this track to all other peer connections
+			forwardedCount := 0
 			for otherClientID, otherPC := range peerConnections {
 				if otherClientID != req.ClientID {
 					_, err := otherPC.AddTrack(localTrack)
 					if err != nil {
 						log.Printf("Error adding track to client %s: %v", otherClientID, err)
+					} else {
+						forwardedCount++
+						log.Printf("Forwarded track from %s to %s", req.ClientID, otherClientID)
 					}
 				}
 			}
+			log.Printf("Track from %s forwarded to %d other clients", req.ClientID, forwardedCount)
 			
 			// Forward packets from remote track to local track
 			go func() {
