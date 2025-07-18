@@ -232,6 +232,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 func sendRecentMessages(conn *websocket.Conn, channelID string) {
+	log.Printf("Sending recent messages for channel %s", channelID)
 	rows, err := db.Query("SELECT username, content, created_at FROM messages WHERE channel_id = ? ORDER BY created_at DESC LIMIT 50", channelID)
 	if err != nil {
 		log.Println("Error querying messages:", err)
@@ -249,10 +250,15 @@ func sendRecentMessages(conn *websocket.Conn, channelID string) {
 			continue
 		}
 		
+		// SQLite DATETIME format: "2006-01-02 15:04:05"
 		timestamp, err := time.Parse("2006-01-02 15:04:05", createdAt)
 		if err != nil {
-			log.Println("Error parsing timestamp:", err)
-			continue
+			// Try alternative format if first fails
+			timestamp, err = time.Parse("2006-01-02T15:04:05Z", createdAt)
+			if err != nil {
+				log.Printf("Error parsing timestamp '%s': %v", createdAt, err)
+				timestamp = time.Now() // Use current time as fallback
+			}
 		}
 		
 		msg.Type = "message"
@@ -261,8 +267,11 @@ func sendRecentMessages(conn *websocket.Conn, channelID string) {
 		messages = append(messages, msg)
 	}
 	
+	log.Printf("Found %d messages for channel %s", len(messages), channelID)
+	
 	// Send messages in chronological order (reverse the slice)
 	for i := len(messages) - 1; i >= 0; i-- {
+		log.Printf("Sending message: %s - %s", messages[i].Username, messages[i].Content)
 		err := conn.WriteJSON(messages[i])
 		if err != nil {
 			log.Println("Error sending message:", err)
