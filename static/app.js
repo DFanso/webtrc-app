@@ -158,6 +158,11 @@ class WebRTCChat {
     }
 
     handleMessage(message) {
+        // Only log WebRTC messages for debugging
+        if (message.type.startsWith('webrtc_')) {
+            console.log('WebRTC message:', message.type, 'from:', message.username);
+        }
+        
         switch (message.type) {
             case 'message':
                 this.displayMessage(message);
@@ -233,6 +238,10 @@ class WebRTCChat {
 
     sendWebSocketMessage(message) {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            // Only log WebRTC messages for debugging
+            if (message.type.startsWith('webrtc_')) {
+                console.log('Sending WebRTC:', message.type, 'to:', message.data?.targetUser || 'all');
+            }
             this.ws.send(JSON.stringify(message));
         } else {
             console.error('WebSocket not connected. State:', this.ws ? this.ws.readyState : 'null');
@@ -288,6 +297,9 @@ class WebRTCChat {
                 // Only create connection if user is the "initiator" (lexicographically smaller username)
                 if (this.currentUser < username) {
                     this.createPeerConnection(username);
+                } else {
+                    // Create a passive connection that waits for offers
+                    this.createPassivePeerConnection(username);
                 }
             }, 100);
         }
@@ -312,6 +324,51 @@ class WebRTCChat {
         if (audioElement) {
             audioElement.remove();
         }
+    }
+
+    async createPassivePeerConnection(username) {
+        // Create a passive connection that only responds to offers
+        if (this.peerConnections.has(username)) {
+            const existingPc = this.peerConnections.get(username);
+            if (existingPc.signalingState !== 'closed') {
+                existingPc.close();
+            }
+            this.peerConnections.delete(username);
+        }
+        
+        const peerConnection = new RTCPeerConnection({
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' }
+            ]
+        });
+        
+        this.peerConnections.set(username, peerConnection);
+        
+        if (this.localStream) {
+            this.localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, this.localStream);
+            });
+        }
+        
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+                this.sendWebSocketMessage({
+                    type: 'webrtc_ice_candidate',
+                    username: this.currentUser,
+                    channel: this.currentChannel,
+                    data: {
+                        candidate: event.candidate,
+                        targetUser: username
+                    }
+                });
+            }
+        };
+        
+        peerConnection.ontrack = (event) => {
+            this.handleRemoteStream(event.streams[0], username);
+        };
+        
+        // Don't create offer - wait for the other user to send one
     }
 
     async createPeerConnection(username) {
@@ -377,19 +434,32 @@ class WebRTCChat {
     async handleWebRTCOffer(message) {
         if (message.data.targetUser !== this.currentUser) return;
         
-        // Always create a fresh connection for offers to avoid state conflicts
-        if (this.peerConnections.has(message.username)) {
-            this.peerConnections.get(message.username).close();
-            this.peerConnections.delete(message.username);
+        let peerConnection = this.peerConnections.get(message.username);
+        
+        // Perfect negotiation: handle collision detection
+        if (peerConnection) {
+            const isPolite = this.currentUser > message.username;
+            
+            if (peerConnection.signalingState !== 'stable') {
+                // There's a collision
+                if (isPolite) {
+                    // Polite peer backs down
+                    await peerConnection.setLocalDescription({type: 'rollback'});
+                } else {
+                    // Impolite peer ignores the offer
+                    console.warn(`Ignoring offer due to collision from ${message.username}`);
+                    return;
+                }
+            }
+        } else {
+            // Create new connection
+            peerConnection = new RTCPeerConnection({
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' }
+                ]
+            });
+            this.peerConnections.set(message.username, peerConnection);
         }
-        
-        const peerConnection = new RTCPeerConnection({
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' }
-            ]
-        });
-        
-        this.peerConnections.set(message.username, peerConnection);
         
         if (this.localStream) {
             this.localStream.getTracks().forEach(track => {
@@ -440,12 +510,23 @@ class WebRTCChat {
         const peerConnection = this.peerConnections.get(message.username);
         if (peerConnection) {
             try {
-                // Only set remote description if we're in the correct state
+                // Perfect negotiation: handle collision detection
                 if (peerConnection.signalingState === 'have-local-offer') {
                     await peerConnection.setRemoteDescription(message.data.answer);
+                } else if (peerConnection.signalingState === 'stable') {
+                    // We're already connected, ignore this answer
+                    console.warn(`Ignoring duplicate answer from ${message.username}`);
                 } else {
-                    // Connection is in wrong state, ignore this answer
-                    console.warn(`Ignoring answer from ${message.username}, connection in state: ${peerConnection.signalingState}`);
+                    // We're in an unexpected state, might be a collision
+                    const isPolite = this.currentUser > message.username;
+                    if (isPolite) {
+                        // Polite peer backs down and restarts negotiation
+                        await peerConnection.setLocalDescription({type: 'rollback'});
+                        await peerConnection.setRemoteDescription(message.data.answer);
+                    } else {
+                        // Impolite peer ignores the answer
+                        console.warn(`Ignoring answer due to collision from ${message.username}`);
+                    }
                 }
             } catch (error) {
                 console.error('Error handling answer:', error);
