@@ -9,6 +9,7 @@ class WebRTCChat {
         this.isLoggedIn = false;
         this.makingOffer = new Map(); // Map<username, boolean>
         this.ignoreOffer = false;
+        this.queuedIceCandidates = new Map(); // Map<username, ICECandidate[]>
         
         this.initUI();
         this.setupEventListeners();
@@ -389,21 +390,28 @@ class WebRTCChat {
         
         // Create connection if it doesn't exist
         if (!peerConnection) {
-            this.createPeerConnection(message.username);
+            await this.createPeerConnection(message.username);
             peerConnection = this.peerConnections.get(message.username);
         }
         
-        // Perfect negotiation pattern
+        // Perfect negotiation pattern - determine politeness
         const isPolite = this.currentUser > message.username;
         const offerCollision = (peerConnection.signalingState !== 'stable') || this.makingOffer.get(message.username);
         
-        this.ignoreOffer = !isPolite && offerCollision;
-        if (this.ignoreOffer) {
+        // Ignore offer if we're impolite and there's a collision
+        if (!isPolite && offerCollision) {
+            console.log(`Ignoring offer collision from ${message.username} (impolite peer)`);
             return;
         }
         
         try {
+            // Set remote description (implicit rollback happens if needed)
             await peerConnection.setRemoteDescription(message.data.offer);
+            
+            // Process any queued ICE candidates
+            await this.processQueuedIceCandidates(message.username);
+            
+            // Create and send answer
             await peerConnection.setLocalDescription();
             
             this.sendWebSocketMessage({
@@ -426,20 +434,19 @@ class WebRTCChat {
         const peerConnection = this.peerConnections.get(message.username);
         if (!peerConnection) return;
         
-        // Check if we're in the correct state to handle an answer
-        if (peerConnection.signalingState !== 'have-local-offer') {
-            console.log(`Ignoring answer from ${message.username}, wrong state: ${peerConnection.signalingState}`);
-            return;
-        }
+        // Perfect negotiation: only process answers when we're expecting one
+        const isExpectingAnswer = peerConnection.signalingState === 'have-local-offer';
         
-        // Check if we have a pending remote description already
-        if (peerConnection.pendingRemoteDescription) {
-            console.log(`Ignoring duplicate answer from ${message.username}`);
+        if (!isExpectingAnswer) {
+            console.log(`Ignoring answer from ${message.username}, not expecting answer (state: ${peerConnection.signalingState})`);
             return;
         }
         
         try {
             await peerConnection.setRemoteDescription(message.data.answer);
+            
+            // Process any queued ICE candidates
+            await this.processQueuedIceCandidates(message.username);
         } catch (error) {
             console.error('Error handling answer:', error);
         }
@@ -452,9 +459,41 @@ class WebRTCChat {
         if (!peerConnection) return;
         
         try {
-            await peerConnection.addIceCandidate(message.data.candidate);
+            // Only add ICE candidates if we have a remote description
+            if (peerConnection.remoteDescription) {
+                await peerConnection.addIceCandidate(message.data.candidate);
+            } else {
+                // Queue ICE candidates until we have a remote description
+                if (!this.queuedIceCandidates) {
+                    this.queuedIceCandidates = new Map();
+                }
+                if (!this.queuedIceCandidates.has(message.username)) {
+                    this.queuedIceCandidates.set(message.username, []);
+                }
+                this.queuedIceCandidates.get(message.username).push(message.data.candidate);
+            }
         } catch (error) {
             console.error('Error adding ICE candidate:', error);
+        }
+    }
+
+    async processQueuedIceCandidates(username) {
+        if (!this.queuedIceCandidates || !this.queuedIceCandidates.has(username)) {
+            return;
+        }
+        
+        const peerConnection = this.peerConnections.get(username);
+        if (!peerConnection) return;
+        
+        const candidates = this.queuedIceCandidates.get(username);
+        this.queuedIceCandidates.delete(username);
+        
+        for (const candidate of candidates) {
+            try {
+                await peerConnection.addIceCandidate(candidate);
+            } catch (error) {
+                console.error('Error adding queued ICE candidate:', error);
+            }
         }
     }
 
