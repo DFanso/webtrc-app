@@ -283,7 +283,7 @@ class WebRTCChat {
             // Own messages - right aligned
             messageDiv.innerHTML = `
                 <div class="flex justify-end items-end space-x-2 mb-1">
-                    <div class="flex flex-col items-end max-w-xs lg:max-w-md">
+                    <div class="flex flex-col items-end max-w-sm sm:max-w-md lg:max-w-lg xl:max-w-xl">
                         <div class="message-bubble message-own">
                             <div class="message-content">${processedContent}</div>
                         </div>
@@ -301,7 +301,7 @@ class WebRTCChat {
                     <div class="w-8 h-8 bg-gray-500 rounded-full flex items-center justify-center text-white text-sm font-bold">
                         ${message.username.charAt(0).toUpperCase()}
                     </div>
-                    <div class="flex flex-col items-start max-w-xs lg:max-w-md">
+                    <div class="flex flex-col items-start max-w-sm sm:max-w-md lg:max-w-lg xl:max-w-xl">
                         <div class="text-xs text-gray-400 mb-1 px-2 font-medium">${this.escapeHtml(message.username)}</div>
                         <div class="message-bubble message-other">
                             <div class="message-content">${processedContent}</div>
