@@ -271,17 +271,45 @@ class WebRTCChat {
 
     displayMessage(message) {
         const messageDiv = document.createElement('div');
-        messageDiv.className = 'flex items-start space-x-3 p-2 hover:bg-gray-800 rounded';
+        messageDiv.className = 'mb-4 fade-in';
         
         const timestamp = new Date(message.timestamp).toLocaleTimeString();
+        const isOwnMessage = message.username === this.currentUser;
+        
+        // Process message content to handle URLs
+        const processedContent = this.processMessageContent(message.content);
+        
         messageDiv.innerHTML = `
-            <div class="font-semibold text-blue-400">${message.username}:</div>
-            <div class="flex-1">${message.content}</div>
-            <div class="text-xs text-gray-500">${timestamp}</div>
+            <div class="flex ${isOwnMessage ? 'justify-end' : 'justify-start'} mb-1">
+                <div class="message-bubble ${isOwnMessage ? 'message-own' : 'message-other'}">
+                    ${!isOwnMessage ? `<div class="font-semibold text-blue-300 mb-1 text-sm">${this.escapeHtml(message.username)}</div>` : ''}
+                    <div class="message-content">${processedContent}</div>
+                    <div class="text-xs opacity-70 mt-2 text-right">${timestamp}</div>
+                </div>
+            </div>
         `;
         
         this.messagesDiv.appendChild(messageDiv);
         this.messagesDiv.scrollTop = this.messagesDiv.scrollHeight;
+    }
+
+    processMessageContent(content) {
+        // Escape HTML first
+        const escaped = this.escapeHtml(content);
+        
+        // URL regex to detect various URL formats
+        const urlRegex = /(https?:\/\/[^\s<>"{}|\\^`\[\]]+)/gi;
+        
+        // Replace URLs with clickable links
+        return escaped.replace(urlRegex, (url) => {
+            return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="url-link break-all">${url}</a>`;
+        });
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     displaySystemMessage(content) {
