@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -21,17 +22,18 @@ var (
 			return true
 		},
 	}
-	clients = make(map[*websocket.Conn]bool)
-	channels = make(map[string]map[*websocket.Conn]*User)
+	clients   = make(map[*websocket.Conn]bool)
+	channels  = make(map[string]map[*websocket.Conn]*User)
 	broadcast = make(chan Message)
 	// WebRTC-related variables removed - using WebSocket audio streaming
 )
 
 type User struct {
-	ID       int    `json:"id"`
-	Username string `json:"username"`
-	Password string `json:"-"`
+	ID       int             `json:"id"`
+	Username string          `json:"username"`
+	Password string          `json:"-"`
 	Conn     *websocket.Conn `json:"-"`
+	WriteMu  sync.Mutex      `json:"-"`
 }
 
 type Message struct {
@@ -59,7 +61,7 @@ func main() {
 	// SFU initialization removed - using WebSocket audio streaming
 
 	r := mux.NewRouter()
-	
+
 	r.HandleFunc("/", serveHome)
 	r.HandleFunc("/register", handleRegister).Methods("POST")
 	r.HandleFunc("/login", handleLogin).Methods("POST")
@@ -184,7 +186,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"message": "Login successful",
 		"user": map[string]interface{}{
-			"id": user.ID,
+			"id":       user.ID,
 			"username": user.Username,
 		},
 	})
@@ -206,7 +208,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Println(err)
 			delete(clients, conn)
-			
+
 			// Remove user from all channels
 			for channelID, channelUsers := range channels {
 				if user, exists := channelUsers[conn]; exists {
@@ -225,12 +227,12 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 
 		msg.Timestamp = time.Now()
-		
+
 		// Only log non-audio messages to reduce spam
 		if msg.Type != "audio_data" && msg.Type != "audio_chunk" {
 			log.Printf("Received message: Type=%s, Username=%s, Channel=%s, Content=%s", msg.Type, msg.Username, msg.Channel, msg.Content)
 		}
-		
+
 		switch msg.Type {
 		case "join_channel":
 			joinChannel(conn, msg.Username, msg.Channel)
@@ -249,7 +251,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func sendRecentMessages(conn *websocket.Conn, channelID string) {
+func sendRecentMessages(user *User, channelID string) {
 	log.Printf("Sending recent messages for channel %s", channelID)
 	rows, err := db.Query("SELECT username, content, created_at FROM messages WHERE channel_id = ? ORDER BY created_at DESC LIMIT 50", channelID)
 	if err != nil {
@@ -267,30 +269,30 @@ func sendRecentMessages(conn *websocket.Conn, channelID string) {
 			log.Println("Error scanning message:", err)
 			continue
 		}
-		
-		// SQLite DATETIME format: "2006-01-02 15:04:05"
+
+		// Parse the timestamp
 		timestamp, err := time.Parse("2006-01-02 15:04:05", createdAt)
 		if err != nil {
-			// Try alternative format if first fails
-			timestamp, err = time.Parse("2006-01-02T15:04:05Z", createdAt)
-			if err != nil {
-				log.Printf("Error parsing timestamp '%s': %v", createdAt, err)
+			log.Printf("Error parsing timestamp '%s': %v", createdAt, err)
+			// Try alternative formats
+			if timestamp, err = time.Parse("2006-01-02T15:04:05Z", createdAt); err != nil {
+				log.Printf("Error parsing timestamp with alternative format: %v", err)
 				timestamp = time.Now() // Use current time as fallback
 			}
 		}
-		
+
 		msg.Type = "message"
 		msg.Channel = channelID
 		msg.Timestamp = timestamp
 		messages = append(messages, msg)
 	}
-	
+
 	log.Printf("Found %d messages for channel %s", len(messages), channelID)
-	
+
 	// Send messages in chronological order (reverse the slice)
 	for i := len(messages) - 1; i >= 0; i-- {
 		log.Printf("Sending message: %s - %s", messages[i].Username, messages[i].Content)
-		err := conn.WriteJSON(messages[i])
+		err := safeWriteJSON(user, messages[i])
 		if err != nil {
 			log.Println("Error sending message:", err)
 			break
@@ -298,12 +300,18 @@ func sendRecentMessages(conn *websocket.Conn, channelID string) {
 	}
 }
 
+func safeWriteJSON(user *User, msg interface{}) error {
+	user.WriteMu.Lock()
+	defer user.WriteMu.Unlock()
+	return user.Conn.WriteJSON(msg)
+}
+
 func joinChannel(conn *websocket.Conn, username, channelID string) {
 	log.Printf("User %s joining channel %s", username, channelID)
 	if channels[channelID] == nil {
 		channels[channelID] = make(map[*websocket.Conn]*User)
 	}
-	
+
 	user := &User{Username: username, Conn: conn}
 	channels[channelID][conn] = user
 	log.Printf("Channel %s now has %d users", channelID, len(channels[channelID]))
@@ -313,20 +321,20 @@ func joinChannel(conn *websocket.Conn, username, channelID string) {
 	for _, u := range channels[channelID] {
 		userList = append(userList, u.Username)
 	}
-	
+
 	userListMsg := Message{
 		Type:      "user_list",
 		Channel:   channelID,
 		Timestamp: time.Now(),
 		Data:      userList,
 	}
-	err := conn.WriteJSON(userListMsg)
+	err := safeWriteJSON(user, userListMsg)
 	if err != nil {
 		log.Println("Error sending user list:", err)
 	}
 
 	// Send recent messages to the new user
-	sendRecentMessages(conn, channelID)
+	sendRecentMessages(user, channelID)
 
 	// Notify other users that this user joined
 	msg := Message{
@@ -335,21 +343,21 @@ func joinChannel(conn *websocket.Conn, username, channelID string) {
 		Channel:   channelID,
 		Timestamp: time.Now(),
 	}
-	
+
 	broadcastToChannel(channelID, msg)
 }
 
 func leaveChannel(conn *websocket.Conn, username, channelID string) {
 	if channels[channelID] != nil {
 		delete(channels[channelID], conn)
-		
+
 		msg := Message{
 			Type:      "user_left",
 			Username:  username,
 			Channel:   channelID,
 			Timestamp: time.Now(),
 		}
-		
+
 		broadcastToChannel(channelID, msg)
 	}
 }
@@ -367,7 +375,7 @@ func broadcastAudioChunk(msg Message) {
 		for conn, user := range channelUsers {
 			// Don't send audio back to the sender
 			if user.Username != msg.Username {
-				err := conn.WriteJSON(msg)
+				err := safeWriteJSON(user, msg)
 				if err != nil {
 					log.Printf("Error sending audio chunk to %s: %v", user.Username, err)
 					conn.Close()
@@ -382,8 +390,8 @@ func broadcastToChannel(channelID string, msg Message) {
 	log.Printf("Broadcasting message to channel %s: %+v", channelID, msg)
 	if channels[channelID] != nil {
 		log.Printf("Channel %s has %d users", channelID, len(channels[channelID]))
-		for conn := range channels[channelID] {
-			err := conn.WriteJSON(msg)
+		for conn, user := range channels[channelID] {
+			err := safeWriteJSON(user, msg)
 			if err != nil {
 				log.Println("Error sending message to user:", err)
 				conn.Close()
