@@ -320,6 +320,12 @@ class WebRTCChat {
     }
 
     async createPeerConnection(username) {
+        // Close existing peer connection if it exists
+        if (this.peerConnections.has(username)) {
+            this.peerConnections.get(username).close();
+            this.peerConnections.delete(username);
+        }
+        
         const peerConnection = new RTCPeerConnection({
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' }
@@ -372,6 +378,12 @@ class WebRTCChat {
 
     async handleWebRTCOffer(message) {
         if (message.data.targetUser !== this.currentUser) return;
+        
+        // Close existing peer connection if it exists
+        if (this.peerConnections.has(message.username)) {
+            this.peerConnections.get(message.username).close();
+            this.peerConnections.delete(message.username);
+        }
         
         const peerConnection = new RTCPeerConnection({
             iceServers: [
@@ -430,7 +442,12 @@ class WebRTCChat {
         const peerConnection = this.peerConnections.get(message.username);
         if (peerConnection) {
             try {
-                await peerConnection.setRemoteDescription(message.data.answer);
+                // Check if we're in the right state to set remote description
+                if (peerConnection.signalingState === 'have-local-offer') {
+                    await peerConnection.setRemoteDescription(message.data.answer);
+                } else {
+                    console.warn(`Cannot set remote description, peer connection in state: ${peerConnection.signalingState}`);
+                }
             } catch (error) {
                 console.error('Error handling answer:', error);
             }
@@ -443,7 +460,12 @@ class WebRTCChat {
         const peerConnection = this.peerConnections.get(message.username);
         if (peerConnection) {
             try {
-                await peerConnection.addIceCandidate(message.data.candidate);
+                // Only add ICE candidate if we have a remote description
+                if (peerConnection.remoteDescription) {
+                    await peerConnection.addIceCandidate(message.data.candidate);
+                } else {
+                    console.warn('Cannot add ICE candidate, no remote description set');
+                }
             } catch (error) {
                 console.error('Error adding ICE candidate:', error);
             }
