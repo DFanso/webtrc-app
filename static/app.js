@@ -432,6 +432,12 @@ class WebRTCChat {
             return;
         }
         
+        // Check if we have a pending remote description already
+        if (peerConnection.pendingRemoteDescription) {
+            console.log(`Ignoring duplicate answer from ${message.username}`);
+            return;
+        }
+        
         try {
             await peerConnection.setRemoteDescription(message.data.answer);
         } catch (error) {
