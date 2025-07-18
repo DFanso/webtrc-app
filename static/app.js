@@ -426,6 +426,12 @@ class WebRTCChat {
         const peerConnection = this.peerConnections.get(message.username);
         if (!peerConnection) return;
         
+        // Check if we're in the correct state to handle an answer
+        if (peerConnection.signalingState !== 'have-local-offer') {
+            console.log(`Ignoring answer from ${message.username}, wrong state: ${peerConnection.signalingState}`);
+            return;
+        }
+        
         try {
             await peerConnection.setRemoteDescription(message.data.answer);
         } catch (error) {
