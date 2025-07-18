@@ -122,84 +122,190 @@
             margin-right: auto;
             border-bottom-left-radius: 6px;
         }
+
+        /* Mobile responsive styles */
+        @media (max-width: 768px) {
+            .mobile-hidden {
+                display: none !important;
+            }
+            
+            .mobile-sidebar {
+                position: fixed;
+                top: 0;
+                left: -100%;
+                width: 85%;
+                height: 100vh;
+                z-index: 50;
+                transition: left 0.3s ease;
+                overflow-y: auto;
+            }
+            
+            .mobile-sidebar.open {
+                left: 0;
+            }
+            
+            .mobile-overlay {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.5);
+                z-index: 40;
+                opacity: 0;
+                visibility: hidden;
+                transition: opacity 0.3s ease, visibility 0.3s ease;
+            }
+            
+            .mobile-overlay.open {
+                opacity: 1;
+                visibility: visible;
+            }
+            
+            .message-bubble {
+                max-width: 95%;
+            }
+            
+            .mobile-flex-col {
+                flex-direction: column;
+            }
+            
+            .mobile-full-width {
+                width: 100%;
+            }
+            
+            .mobile-text-sm {
+                font-size: 0.875rem;
+            }
+            
+            .mobile-p-2 {
+                padding: 0.5rem;
+            }
+            
+            .mobile-p-4 {
+                padding: 1rem;
+            }
+            
+            .mobile-mb-2 {
+                margin-bottom: 0.5rem;
+            }
+            
+            .mobile-space-x-2 > * + * {
+                margin-left: 0.5rem;
+            }
+        }
+
+        /* Tablet responsive styles */
+        @media (max-width: 1024px) and (min-width: 769px) {
+            .tablet-w-64 {
+                width: 16rem;
+            }
+            
+            .tablet-p-4 {
+                padding: 1rem;
+            }
+            
+            .tablet-text-lg {
+                font-size: 1.125rem;
+            }
+        }
+
+        /* Mobile menu button */
+        .mobile-menu-btn {
+            display: none;
+        }
+        
+        @media (max-width: 768px) {
+            .mobile-menu-btn {
+                display: block;
+            }
+        }
     </style>
 </head>
 <body class="bg-gradient-to-br from-gray-900 via-purple-900 to-violet-900 text-white min-h-screen">
-    <div id="app" class="container mx-auto px-4 py-8">
+    <div id="app" class="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
         <!-- Login/Register Form -->
-        <div id="auth-section" class="max-w-md mx-auto fade-in">
-            <div class="text-center mb-8">
-                <h1 class="text-4xl font-bold gradient-text mb-4">🎙️ WebRTC Voice Chat</h1>
-                <p class="text-gray-300 text-lg">Connect and chat with crystal clear audio</p>
+        <div id="auth-section" class="max-w-md mx-auto fade-in px-4 sm:px-0">
+            <div class="text-center mb-6 sm:mb-8">
+                <h1 class="text-3xl sm:text-4xl font-bold gradient-text mb-4">🎙️ WebRTC Voice Chat</h1>
+                <p class="text-gray-300 text-base sm:text-lg">Connect and chat with crystal clear audio</p>
             </div>
             
-            <div class="glass-effect rounded-2xl p-8 shadow-2xl hover-lift">
-                <div class="mb-6">
-                    <button id="login-tab" class="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg mr-3 font-semibold transition-all duration-200 hover:from-blue-700 hover:to-blue-800 transform hover:scale-105">Login</button>
-                    <button id="register-tab" class="px-6 py-3 bg-gray-600 text-white rounded-lg font-semibold transition-all duration-200 hover:bg-gray-500 transform hover:scale-105">Register</button>
+            <div class="glass-effect rounded-2xl p-6 sm:p-8 shadow-2xl hover-lift">
+                <div class="mb-4 sm:mb-6">
+                    <button id="login-tab" class="px-4 sm:px-6 py-2 sm:py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg mr-2 sm:mr-3 font-semibold transition-all duration-200 hover:from-blue-700 hover:to-blue-800 transform hover:scale-105 text-sm sm:text-base">Login</button>
+                    <button id="register-tab" class="px-4 sm:px-6 py-2 sm:py-3 bg-gray-600 text-white rounded-lg font-semibold transition-all duration-200 hover:bg-gray-500 transform hover:scale-105 text-sm sm:text-base">Register</button>
                 </div>
                 
-                <form id="auth-form" class="space-y-6">
+                <form id="auth-form" class="space-y-4 sm:space-y-6">
                     <div class="relative">
-                        <input type="text" id="username" placeholder="Username" class="w-full pl-12 pr-4 py-3 bg-gray-800/50 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-gray-800/70 transition-all duration-200 border border-gray-600/50">
-                        <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">👤</span>
+                        <input type="text" id="username" placeholder="Username" class="w-full pl-10 sm:pl-12 pr-4 py-2.5 sm:py-3 bg-gray-800/50 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-gray-800/70 transition-all duration-200 border border-gray-600/50 text-sm sm:text-base">
+                        <span class="absolute left-2.5 sm:left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm sm:text-base">👤</span>
                     </div>
                     <div class="relative">
-                        <input type="password" id="password" placeholder="Password" class="w-full pl-12 pr-4 py-3 bg-gray-800/50 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-gray-800/70 transition-all duration-200 border border-gray-600/50">
-                        <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">🔒</span>
+                        <input type="password" id="password" placeholder="Password" class="w-full pl-10 sm:pl-12 pr-4 py-2.5 sm:py-3 bg-gray-800/50 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-gray-800/70 transition-all duration-200 border border-gray-600/50 text-sm sm:text-base">
+                        <span class="absolute left-2.5 sm:left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm sm:text-base">🔒</span>
                     </div>
-                    <button type="submit" id="auth-submit" class="w-full py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 font-semibold transition-all duration-200 transform hover:scale-105 shadow-lg">Login</button>
+                    <button type="submit" id="auth-submit" class="w-full py-2.5 sm:py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 font-semibold transition-all duration-200 transform hover:scale-105 shadow-lg text-sm sm:text-base">Login</button>
                 </form>
                 
-                <div id="auth-message" class="mt-6 text-center font-medium"></div>
+                <div id="auth-message" class="mt-4 sm:mt-6 text-center font-medium text-sm sm:text-base"></div>
             </div>
         </div>
 
         <!-- Main Chat Interface -->
         <div id="chat-section" class="hidden fade-in">
-            <div class="flex h-screen">
+            <!-- Mobile overlay -->
+            <div id="mobile-overlay" class="mobile-overlay"></div>
+            
+            <div class="flex h-screen relative">
                 <!-- Sidebar -->
-                <div class="w-80 glass-effect p-6 border-r border-gray-600/30">
-                    <div class="mb-8">
-                        <h2 class="text-2xl font-bold mb-4 gradient-text">🔊 Voice Channels</h2>
+                <div id="sidebar" class="w-80 lg:w-80 md:w-64 glass-effect p-4 sm:p-6 border-r border-gray-600/30 mobile-sidebar tablet-w-64">
+                    <div class="mb-6 sm:mb-8">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="text-xl sm:text-2xl font-bold gradient-text">🔊 Voice Channels</h2>
+                            <button id="close-sidebar" class="mobile-menu-btn p-2 hover:bg-gray-700/50 rounded-lg transition-colors">
+                                <span class="text-xl">✕</span>
+                            </button>
+                        </div>
                         <div id="channels-list" class="space-y-2">
-                            <div class="channel-item p-4 hover:bg-gray-700/50 cursor-pointer rounded-xl transition-all duration-200 hover-lift border border-gray-600/30" data-channel="general">
-                                <div class="flex items-center space-x-3">
-                                    <span class="text-2xl">🔊</span>
+                            <div class="channel-item p-3 sm:p-4 hover:bg-gray-700/50 cursor-pointer rounded-xl transition-all duration-200 hover-lift border border-gray-600/30" data-channel="general">
+                                <div class="flex items-center space-x-2 sm:space-x-3">
+                                    <span class="text-xl sm:text-2xl">🔊</span>
                                     <div>
-                                        <div class="font-semibold">General</div>
-                                        <div class="text-sm text-gray-400">Main voice channel</div>
+                                        <div class="font-semibold text-sm sm:text-base">General</div>
+                                        <div class="text-xs sm:text-sm text-gray-400">Main voice channel</div>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
                     
-                    <div class="mb-8">
-                        <h3 class="text-xl font-semibold mb-4 flex items-center">
+                    <div class="mb-6 sm:mb-8">
+                        <h3 class="text-lg sm:text-xl font-semibold mb-3 sm:mb-4 flex items-center">
                             <span class="mr-2">👥</span>
-                            Connected Users
+                            <span class="text-sm sm:text-base">Connected Users</span>
                             <span id="user-count" class="ml-2 bg-blue-600 text-xs px-2 py-1 rounded-full">0</span>
                         </h3>
-                        <div id="users-list" class="space-y-3 custom-scroll max-h-64 overflow-y-auto"></div>
+                        <div id="users-list" class="space-y-2 sm:space-y-3 custom-scroll max-h-48 sm:max-h-64 overflow-y-auto"></div>
                     </div>
                     
                     <div class="mt-auto">
-                        <div class="glass-effect rounded-xl p-4 border border-gray-600/30">
-                            <div class="flex items-center justify-between mb-4">
-                                <button id="mute-btn" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all duration-200 transform hover:scale-105 font-semibold shadow-lg">
+                        <div class="glass-effect rounded-xl p-3 sm:p-4 border border-gray-600/30">
+                            <div class="flex items-center justify-between mb-3 sm:mb-4 mobile-flex-col mobile-space-x-2 space-x-2">
+                                <button id="mute-btn" class="px-3 sm:px-4 py-1.5 sm:py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all duration-200 transform hover:scale-105 font-semibold shadow-lg text-xs sm:text-sm mobile-full-width mobile-mb-2">
                                     🎤 Mute
                                 </button>
-                                <button id="disconnect-btn" class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500 transition-all duration-200 transform hover:scale-105 font-semibold shadow-lg">
+                                <button id="disconnect-btn" class="px-3 sm:px-4 py-1.5 sm:py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500 transition-all duration-200 transform hover:scale-105 font-semibold shadow-lg text-xs sm:text-sm mobile-full-width">
                                     Disconnect
                                 </button>
                             </div>
                             <div class="text-center">
-                                <div class="w-12 h-12 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full mx-auto mb-2 flex items-center justify-center text-xl font-bold status-online">
+                                <div class="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full mx-auto mb-2 flex items-center justify-center text-lg sm:text-xl font-bold status-online">
                                     👤
                                 </div>
-                                <div class="font-semibold" id="current-user">User</div>
-                                <div class="text-sm text-green-400">● Online</div>
+                                <div class="font-semibold text-sm sm:text-base" id="current-user">User</div>
+                                <div class="text-xs sm:text-sm text-green-400">● Online</div>
                             </div>
                         </div>
                     </div>
@@ -208,47 +314,52 @@
                 <!-- Main Content -->
                 <div class="flex-1 flex flex-col bg-gray-900/50">
                     <!-- Channel Header -->
-                    <div class="glass-effect p-6 border-b border-gray-600/30">
+                    <div class="glass-effect p-4 sm:p-6 border-b border-gray-600/30">
                         <div class="flex items-center justify-between">
-                            <h2 id="current-channel" class="text-2xl font-bold flex items-center">
-                                <span class="mr-3 text-3xl">🔊</span>
-                                # General
-                            </h2>
-                            <div class="flex items-center space-x-4">
-                                <div class="flex items-center space-x-2 bg-green-600/20 px-3 py-1 rounded-full">
-                                    <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                                    <span class="text-sm text-green-400 font-medium">Live</span>
+                            <div class="flex items-center">
+                                <button id="mobile-menu-btn" class="mobile-menu-btn mr-3 p-2 hover:bg-gray-700/50 rounded-lg transition-colors">
+                                    <span class="text-xl">☰</span>
+                                </button>
+                                <h2 id="current-channel" class="text-lg sm:text-2xl font-bold flex items-center">
+                                    <span class="mr-2 sm:mr-3 text-2xl sm:text-3xl">🔊</span>
+                                    <span class="hidden sm:inline"># </span>General
+                                </h2>
+                            </div>
+                            <div class="flex items-center space-x-2 sm:space-x-4">
+                                <div class="flex items-center space-x-1 sm:space-x-2 bg-green-600/20 px-2 sm:px-3 py-1 rounded-full">
+                                    <div class="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-green-400 rounded-full animate-pulse"></div>
+                                    <span class="text-xs sm:text-sm text-green-400 font-medium">Live</span>
                                 </div>
-                                <button class="p-2 hover:bg-gray-700/50 rounded-lg transition-colors">
-                                    <span class="text-xl">⚙️</span>
+                                <button class="p-1.5 sm:p-2 hover:bg-gray-700/50 rounded-lg transition-colors">
+                                    <span class="text-lg sm:text-xl">⚙️</span>
                                 </button>
                             </div>
                         </div>
                     </div>
                     
                     <!-- Messages -->
-                    <div id="messages" class="flex-1 overflow-y-auto p-6 space-y-4 custom-scroll bg-gradient-to-b from-transparent to-gray-900/20"></div>
+                    <div id="messages" class="flex-1 overflow-y-auto p-3 sm:p-6 space-y-3 sm:space-y-4 custom-scroll bg-gradient-to-b from-transparent to-gray-900/20"></div>
                     
                     <!-- Message Input -->
-                    <div class="p-6 glass-effect border-t border-gray-600/30">
-                        <div class="flex space-x-4">
+                    <div class="p-3 sm:p-6 glass-effect border-t border-gray-600/30">
+                        <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
                             <div class="flex-1 relative">
-                                <input type="text" id="message-input" placeholder="Type a message..." class="w-full px-4 py-3 bg-gray-800/50 text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-gray-800/70 transition-all duration-200 border border-gray-600/50 pr-12">
-                                <button class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition-colors">
-                                    <span class="text-xl">😊</span>
+                                <input type="text" id="message-input" placeholder="Type a message..." class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-gray-800/50 text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-gray-800/70 transition-all duration-200 border border-gray-600/50 pr-10 sm:pr-12 text-sm sm:text-base">
+                                <button class="absolute right-2 sm:right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition-colors">
+                                    <span class="text-lg sm:text-xl">😊</span>
                                 </button>
                             </div>
-                            <button id="send-btn" class="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:from-blue-700 hover:to-purple-700 font-semibold transition-all duration-200 transform hover:scale-105 shadow-lg">
-                                <span class="mr-2">📤</span>
+                            <button id="send-btn" class="px-4 sm:px-6 py-2.5 sm:py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:from-blue-700 hover:to-purple-700 font-semibold transition-all duration-200 transform hover:scale-105 shadow-lg text-sm sm:text-base">
+                                <span class="mr-1 sm:mr-2">📤</span>
                                 Send
                             </button>
                         </div>
-                        <div class="mt-3 flex items-center justify-between text-sm text-gray-400">
-                            <div class="flex items-center space-x-4">
+                        <div class="mt-2 sm:mt-3 flex flex-col sm:flex-row items-center justify-between text-xs sm:text-sm text-gray-400 space-y-2 sm:space-y-0">
+                            <div class="flex items-center space-x-3 sm:space-x-4">
                                 <button class="hover:text-white transition-colors">📎 Attach</button>
                                 <button class="hover:text-white transition-colors">🎵 Voice Note</button>
                             </div>
-                            <div>Press Enter to send</div>
+                            <div class="hidden sm:block">Press Enter to send</div>
                         </div>
                     </div>
                 </div>

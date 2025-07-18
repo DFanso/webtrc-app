@@ -39,6 +39,12 @@ class WebRTCChat {
         this.usersList = document.getElementById('users-list');
         this.channelsList = document.getElementById('channels-list');
         this.remoteAudioContainer = document.getElementById('remote-audio-container');
+        
+        // Mobile UI elements
+        this.sidebar = document.getElementById('sidebar');
+        this.mobileMenuBtn = document.getElementById('mobile-menu-btn');
+        this.closeSidebarBtn = document.getElementById('close-sidebar');
+        this.mobileOverlay = document.getElementById('mobile-overlay');
     }
 
     setupEventListeners() {
@@ -56,6 +62,26 @@ class WebRTCChat {
             if (e.target.classList.contains('channel-item')) {
                 const channel = e.target.dataset.channel;
                 this.joinChannel(channel);
+            }
+        });
+
+        // Mobile sidebar event listeners
+        if (this.mobileMenuBtn) {
+            this.mobileMenuBtn.addEventListener('click', () => this.openMobileSidebar());
+        }
+        
+        if (this.closeSidebarBtn) {
+            this.closeSidebarBtn.addEventListener('click', () => this.closeMobileSidebar());
+        }
+        
+        if (this.mobileOverlay) {
+            this.mobileOverlay.addEventListener('click', () => this.closeMobileSidebar());
+        }
+
+        // Close sidebar on window resize to desktop
+        window.addEventListener('resize', () => {
+            if (window.innerWidth > 768) {
+                this.closeMobileSidebar();
             }
         });
     }
@@ -500,6 +526,23 @@ class WebRTCChat {
                     'px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700' : 
                     'px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700';
             }
+        }
+    }
+
+    // Mobile sidebar methods
+    openMobileSidebar() {
+        if (this.sidebar && this.mobileOverlay) {
+            this.sidebar.classList.add('open');
+            this.mobileOverlay.classList.add('open');
+            document.body.style.overflow = 'hidden'; // Prevent body scrolling
+        }
+    }
+
+    closeMobileSidebar() {
+        if (this.sidebar && this.mobileOverlay) {
+            this.sidebar.classList.remove('open');
+            this.mobileOverlay.classList.remove('open');
+            document.body.style.overflow = ''; // Restore body scrolling
         }
     }
 
