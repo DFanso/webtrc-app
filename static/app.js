@@ -2,11 +2,13 @@ class WebRTCChat {
     constructor() {
         this.ws = null;
         this.localStream = null;
-        this.peerConnections = new Map();
+        this.peerConnections = new Map(); // Map<username, RTCPeerConnection>
         this.currentUser = null;
         this.currentChannel = 'general';
         this.isMuted = false;
         this.isLoggedIn = false;
+        this.makingOffer = new Map(); // Map<username, boolean>
+        this.ignoreOffer = false;
         
         this.initUI();
         this.setupEventListeners();
@@ -276,6 +278,10 @@ class WebRTCChat {
         
         userList.forEach(username => {
             this.addUserToList(username);
+            // Create peer connection for each user (except self)
+            if (username !== this.currentUser) {
+                this.createPeerConnection(username);
+            }
         });
     }
 
@@ -290,19 +296,6 @@ class WebRTCChat {
             <span>${username}</span>
         `;
         this.usersList.appendChild(userDiv);
-        
-        if (username !== this.currentUser && this.localStream) {
-            // Add a small delay to prevent race conditions when multiple users join
-            setTimeout(() => {
-                // Only create connection if user is the "initiator" (lexicographically smaller username)
-                if (this.currentUser < username) {
-                    this.createPeerConnection(username);
-                } else {
-                    // Create a passive connection that waits for offers
-                    this.createPassivePeerConnection(username);
-                }
-            }, 100);
-        }
     }
 
     removeUserFromList(username) {
@@ -326,59 +319,11 @@ class WebRTCChat {
         }
     }
 
-    async createPassivePeerConnection(username) {
-        // Create a passive connection that only responds to offers
-        if (this.peerConnections.has(username)) {
-            const existingPc = this.peerConnections.get(username);
-            if (existingPc.signalingState !== 'closed') {
-                existingPc.close();
-            }
-            this.peerConnections.delete(username);
-        }
-        
-        const peerConnection = new RTCPeerConnection({
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' }
-            ]
-        });
-        
-        this.peerConnections.set(username, peerConnection);
-        
-        if (this.localStream) {
-            this.localStream.getTracks().forEach(track => {
-                peerConnection.addTrack(track, this.localStream);
-            });
-        }
-        
-        peerConnection.onicecandidate = (event) => {
-            if (event.candidate) {
-                this.sendWebSocketMessage({
-                    type: 'webrtc_ice_candidate',
-                    username: this.currentUser,
-                    channel: this.currentChannel,
-                    data: {
-                        candidate: event.candidate,
-                        targetUser: username
-                    }
-                });
-            }
-        };
-        
-        peerConnection.ontrack = (event) => {
-            this.handleRemoteStream(event.streams[0], username);
-        };
-        
-        // Don't create offer - wait for the other user to send one
-    }
 
     async createPeerConnection(username) {
-        // Always create a fresh connection to avoid state conflicts
+        // Don't create duplicate connections
         if (this.peerConnections.has(username)) {
-            const existingPc = this.peerConnections.get(username);
-            if (existingPc.signalingState !== 'closed') {
-                existingPc.close();
-            }
-            this.peerConnections.delete(username);
+            return;
         }
         
         const peerConnection = new RTCPeerConnection({
@@ -388,6 +333,7 @@ class WebRTCChat {
         });
         
         this.peerConnections.set(username, peerConnection);
+        this.makingOffer.set(username, false);
         
         if (this.localStream) {
             this.localStream.getTracks().forEach(track => {
@@ -413,22 +359,27 @@ class WebRTCChat {
             this.handleRemoteStream(event.streams[0], username);
         };
         
-        try {
-            const offer = await peerConnection.createOffer();
-            await peerConnection.setLocalDescription(offer);
-            
-            this.sendWebSocketMessage({
-                type: 'webrtc_offer',
-                username: this.currentUser,
-                channel: this.currentChannel,
-                data: {
-                    offer: offer,
-                    targetUser: username
-                }
-            });
-        } catch (error) {
-            console.error('Error creating offer:', error);
-        }
+        // Perfect negotiation pattern
+        peerConnection.onnegotiationneeded = async () => {
+            try {
+                this.makingOffer.set(username, true);
+                await peerConnection.setLocalDescription();
+                
+                this.sendWebSocketMessage({
+                    type: 'webrtc_offer',
+                    username: this.currentUser,
+                    channel: this.currentChannel,
+                    data: {
+                        offer: peerConnection.localDescription,
+                        targetUser: username
+                    }
+                });
+            } catch (error) {
+                console.error('Error in negotiation:', error);
+            } finally {
+                this.makingOffer.set(username, false);
+            }
+        };
     }
 
     async handleWebRTCOffer(message) {
@@ -436,66 +387,31 @@ class WebRTCChat {
         
         let peerConnection = this.peerConnections.get(message.username);
         
-        // Perfect negotiation: handle collision detection
-        if (peerConnection) {
-            const isPolite = this.currentUser > message.username;
-            
-            if (peerConnection.signalingState !== 'stable') {
-                // There's a collision
-                if (isPolite) {
-                    // Polite peer backs down
-                    await peerConnection.setLocalDescription({type: 'rollback'});
-                } else {
-                    // Impolite peer ignores the offer
-                    console.warn(`Ignoring offer due to collision from ${message.username}`);
-                    return;
-                }
-            }
-        } else {
-            // Create new connection
-            peerConnection = new RTCPeerConnection({
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' }
-                ]
-            });
-            this.peerConnections.set(message.username, peerConnection);
+        // Create connection if it doesn't exist
+        if (!peerConnection) {
+            this.createPeerConnection(message.username);
+            peerConnection = this.peerConnections.get(message.username);
         }
         
-        if (this.localStream) {
-            this.localStream.getTracks().forEach(track => {
-                peerConnection.addTrack(track, this.localStream);
-            });
+        // Perfect negotiation pattern
+        const isPolite = this.currentUser > message.username;
+        const offerCollision = (peerConnection.signalingState !== 'stable') || this.makingOffer.get(message.username);
+        
+        this.ignoreOffer = !isPolite && offerCollision;
+        if (this.ignoreOffer) {
+            return;
         }
-        
-        peerConnection.onicecandidate = (event) => {
-            if (event.candidate) {
-                this.sendWebSocketMessage({
-                    type: 'webrtc_ice_candidate',
-                    username: this.currentUser,
-                    channel: this.currentChannel,
-                    data: {
-                        candidate: event.candidate,
-                        targetUser: message.username
-                    }
-                });
-            }
-        };
-        
-        peerConnection.ontrack = (event) => {
-            this.handleRemoteStream(event.streams[0], message.username);
-        };
         
         try {
             await peerConnection.setRemoteDescription(message.data.offer);
-            const answer = await peerConnection.createAnswer();
-            await peerConnection.setLocalDescription(answer);
+            await peerConnection.setLocalDescription();
             
             this.sendWebSocketMessage({
                 type: 'webrtc_answer',
                 username: this.currentUser,
                 channel: this.currentChannel,
                 data: {
-                    answer: answer,
+                    answer: peerConnection.localDescription,
                     targetUser: message.username
                 }
             });
@@ -508,29 +424,12 @@ class WebRTCChat {
         if (message.data.targetUser !== this.currentUser) return;
         
         const peerConnection = this.peerConnections.get(message.username);
-        if (peerConnection) {
-            try {
-                // Perfect negotiation: handle collision detection
-                if (peerConnection.signalingState === 'have-local-offer') {
-                    await peerConnection.setRemoteDescription(message.data.answer);
-                } else if (peerConnection.signalingState === 'stable') {
-                    // We're already connected, ignore this answer
-                    console.warn(`Ignoring duplicate answer from ${message.username}`);
-                } else {
-                    // We're in an unexpected state, might be a collision
-                    const isPolite = this.currentUser > message.username;
-                    if (isPolite) {
-                        // Polite peer backs down and restarts negotiation
-                        await peerConnection.setLocalDescription({type: 'rollback'});
-                        await peerConnection.setRemoteDescription(message.data.answer);
-                    } else {
-                        // Impolite peer ignores the answer
-                        console.warn(`Ignoring answer due to collision from ${message.username}`);
-                    }
-                }
-            } catch (error) {
-                console.error('Error handling answer:', error);
-            }
+        if (!peerConnection) return;
+        
+        try {
+            await peerConnection.setRemoteDescription(message.data.answer);
+        } catch (error) {
+            console.error('Error handling answer:', error);
         }
     }
 
@@ -538,17 +437,12 @@ class WebRTCChat {
         if (message.data.targetUser !== this.currentUser) return;
         
         const peerConnection = this.peerConnections.get(message.username);
-        if (peerConnection) {
-            try {
-                // Only add ICE candidate if we have a remote description
-                if (peerConnection.remoteDescription) {
-                    await peerConnection.addIceCandidate(message.data.candidate);
-                } else {
-                    console.warn('Cannot add ICE candidate, no remote description set');
-                }
-            } catch (error) {
-                console.error('Error adding ICE candidate:', error);
-            }
+        if (!peerConnection) return;
+        
+        try {
+            await peerConnection.addIceCandidate(message.data.candidate);
+        } catch (error) {
+            console.error('Error adding ICE candidate:', error);
         }
     }
 
