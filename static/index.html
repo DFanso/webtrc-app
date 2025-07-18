@@ -168,10 +168,26 @@
             }
             
             .message-bubble {
-                max-width: 90%;
+                max-width: 85%;
                 word-break: break-word;
                 overflow-wrap: break-word;
-                padding: 10px 14px;
+                padding: 8px 12px;
+                font-size: 0.875rem;
+                border-radius: 14px;
+                margin: 2px 0;
+                line-height: 1.3;
+            }
+            
+            .message-own {
+                border-bottom-right-radius: 4px;
+            }
+            
+            .message-other {
+                border-bottom-left-radius: 4px;
+            }
+            
+            #messages {
+                padding: 0.75rem !important;
             }
             
             .mobile-flex-col {
@@ -203,6 +219,24 @@
             }
         }
 
+        /* Small mobile devices (iPhone SE, etc.) */
+        @media (max-width: 480px) {
+            .message-bubble {
+                max-width: 90%;
+                padding: 6px 10px;
+                font-size: 0.8rem;
+                border-radius: 12px;
+            }
+            
+            #messages {
+                padding: 0.5rem !important;
+            }
+            
+            .glass-effect {
+                backdrop-filter: blur(12px) saturate(160%);
+            }
+        }
+
         /* Tablet responsive styles */
         @media (max-width: 1024px) and (min-width: 769px) {
             .tablet-w-64 {
@@ -215,6 +249,33 @@
             
             .tablet-text-lg {
                 font-size: 1.125rem;
+            }
+            
+            .message-bubble {
+                max-width: 75%;
+                padding: 10px 14px;
+                font-size: 0.9rem;
+            }
+            
+            #messages {
+                padding: 1rem;
+            }
+        }
+
+        /* Large screens */
+        @media (min-width: 1280px) {
+            .message-bubble {
+                max-width: 70%;
+                padding: 14px 18px;
+                font-size: 1rem;
+            }
+        }
+
+        /* Ultra-wide screens */
+        @media (min-width: 1920px) {
+            .message-bubble {
+                max-width: 60%;
+                padding: 16px 20px;
             }
         }
 
