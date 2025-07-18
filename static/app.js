@@ -271,23 +271,46 @@ class WebRTCChat {
 
     displayMessage(message) {
         const messageDiv = document.createElement('div');
-        messageDiv.className = 'mb-4 fade-in';
+        messageDiv.className = 'mb-3 fade-in';
         
-        const timestamp = new Date(message.timestamp).toLocaleTimeString();
+        const timestamp = new Date(message.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
         const isOwnMessage = message.username === this.currentUser;
         
         // Process message content to handle URLs
         const processedContent = this.processMessageContent(message.content);
         
-        messageDiv.innerHTML = `
-            <div class="flex ${isOwnMessage ? 'justify-end' : 'justify-start'} mb-1">
-                <div class="message-bubble ${isOwnMessage ? 'message-own' : 'message-other'}">
-                    ${!isOwnMessage ? `<div class="font-semibold text-blue-300 mb-1 text-sm">${this.escapeHtml(message.username)}</div>` : ''}
-                    <div class="message-content">${processedContent}</div>
-                    <div class="text-xs opacity-70 mt-2 text-right">${timestamp}</div>
+        if (isOwnMessage) {
+            // Own messages - right aligned
+            messageDiv.innerHTML = `
+                <div class="flex justify-end items-end space-x-2 mb-1">
+                    <div class="flex flex-col items-end max-w-xs lg:max-w-md">
+                        <div class="message-bubble message-own">
+                            <div class="message-content">${processedContent}</div>
+                        </div>
+                        <div class="text-xs text-gray-400 mt-1 px-2">${timestamp}</div>
+                    </div>
+                    <div class="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-bold">
+                        ${this.currentUser.charAt(0).toUpperCase()}
+                    </div>
                 </div>
-            </div>
-        `;
+            `;
+        } else {
+            // Other messages - left aligned
+            messageDiv.innerHTML = `
+                <div class="flex justify-start items-end space-x-2 mb-1">
+                    <div class="w-8 h-8 bg-gray-500 rounded-full flex items-center justify-center text-white text-sm font-bold">
+                        ${message.username.charAt(0).toUpperCase()}
+                    </div>
+                    <div class="flex flex-col items-start max-w-xs lg:max-w-md">
+                        <div class="text-xs text-gray-400 mb-1 px-2 font-medium">${this.escapeHtml(message.username)}</div>
+                        <div class="message-bubble message-other">
+                            <div class="message-content">${processedContent}</div>
+                        </div>
+                        <div class="text-xs text-gray-400 mt-1 px-2">${timestamp}</div>
+                    </div>
+                </div>
+            `;
+        }
         
         this.messagesDiv.appendChild(messageDiv);
         this.messagesDiv.scrollTop = this.messagesDiv.scrollHeight;
@@ -314,8 +337,14 @@ class WebRTCChat {
 
     displaySystemMessage(content) {
         const messageDiv = document.createElement('div');
-        messageDiv.className = 'text-center text-gray-500 text-sm py-2';
-        messageDiv.textContent = content;
+        messageDiv.className = 'flex justify-center my-4 fade-in';
+        
+        messageDiv.innerHTML = `
+            <div class="bg-gray-700/50 backdrop-blur-sm text-gray-300 text-sm px-4 py-2 rounded-full border border-gray-600/30">
+                <span class="mr-2">ℹ️</span>${this.escapeHtml(content)}
+            </div>
+        `;
+        
         this.messagesDiv.appendChild(messageDiv);
         this.messagesDiv.scrollTop = this.messagesDiv.scrollHeight;
     }
