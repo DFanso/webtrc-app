@@ -10,6 +10,42 @@
             display: none;
         }
         
+        /* Animated GIF Background */
+        .animated-background {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            opacity: 0.15;
+            pointer-events: none;
+            overflow: hidden;
+        }
+        
+        .animated-background iframe {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border: none;
+            transform: scale(1.1);
+        }
+        
+        /* Add overlay to enhance readability */
+        .animated-background::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, 
+                rgba(17, 25, 40, 0.8) 0%, 
+                rgba(55, 65, 81, 0.6) 50%, 
+                rgba(17, 25, 40, 0.8) 100%);
+            z-index: 1;
+        }
+
         /* Custom animations and styles */
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(20px); }
@@ -223,6 +259,15 @@
     </style>
 </head>
 <body class="bg-gradient-to-br from-gray-900 via-purple-900 to-violet-900 text-white min-h-screen">
+    <!-- Animated GIF Background -->
+    <div class="animated-background">
+        <iframe src="https://giphy.com/embed/ktDkLA5Hp9dM4" 
+                frameBorder="0" 
+                class="giphy-embed" 
+                allowFullScreen>
+        </iframe>
+    </div>
+    
     <div id="app" class="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
         <!-- Login/Register Form -->
         <div id="auth-section" class="max-w-md mx-auto fade-in px-4 sm:px-0">
