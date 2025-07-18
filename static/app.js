@@ -9,7 +9,7 @@ class WebRTCChat {
         this.isMuted = false;
         this.isLoggedIn = false;
         this.isRecording = false;
-        this.audioPlayers = new Map(); // Map<username, AudioContext>
+        this.audioPlayers = new Map(); // Map<username, {context, nextStartTime, bufferQueue}>
         
         this.initUI();
         this.setupEventListeners();
@@ -298,6 +298,15 @@ class WebRTCChat {
         if (audioElement) {
             audioElement.remove();
         }
+        
+        // Clean up audio player context
+        if (this.audioPlayers.has(username)) {
+            const playerInfo = this.audioPlayers.get(username);
+            if (playerInfo.context) {
+                playerInfo.context.close();
+            }
+            this.audioPlayers.delete(username);
+        }
     }
 
 
@@ -310,10 +319,10 @@ class WebRTCChat {
         try {
             console.log('Starting WebSocket audio recording...');
             
-            // Get microphone access
+            // Get microphone access with consistent sample rate
             this.localStream = await navigator.mediaDevices.getUserMedia({ 
                 audio: {
-                    sampleRate: 16000,
+                    sampleRate: 44100,  // Use standard sample rate
                     channelCount: 1,
                     echoCancellation: true,
                     noiseSuppression: true
@@ -326,8 +335,8 @@ class WebRTCChat {
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             const source = this.audioContext.createMediaStreamSource(this.localStream);
             
-            // Create ScriptProcessorNode for real-time audio processing
-            this.scriptProcessor = this.audioContext.createScriptProcessor(4096, 1, 1);
+            // Use smaller buffer size to reduce latency
+            this.scriptProcessor = this.audioContext.createScriptProcessor(1024, 1, 1);
             
             this.scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
                 if (!this.isMuted) {
@@ -342,7 +351,7 @@ class WebRTCChat {
             this.scriptProcessor.connect(this.audioContext.destination);
             this.isRecording = true;
             
-            console.log('Audio recording started');
+            console.log(`Audio recording started with sample rate: ${this.audioContext.sampleRate}`);
         } catch (error) {
             console.error('Error starting audio recording:', error);
         }
@@ -416,13 +425,18 @@ class WebRTCChat {
 
             console.log(`Received audio data from ${message.username}: ${message.audioData.length} characters`);
 
-            // Get or create AudioContext for this user
+            // Get or create AudioContext and playback tracking for this user
             if (!this.audioPlayers.has(message.username)) {
                 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                this.audioPlayers.set(message.username, audioContext);
+                this.audioPlayers.set(message.username, {
+                    context: audioContext,
+                    nextStartTime: 0,
+                    bufferQueue: []
+                });
             }
 
-            const audioContext = this.audioPlayers.get(message.username);
+            const playerInfo = this.audioPlayers.get(message.username);
+            const audioContext = playerInfo.context;
 
             // Convert base64 back to audio data
             let binaryString;
@@ -441,20 +455,29 @@ class WebRTCChat {
             const int16Array = new Int16Array(uint8Array.buffer);
 
             // Convert Int16 to Float32 for Web Audio API
-            const audioBuffer = audioContext.createBuffer(1, int16Array.length, message.sampleRate || 44100);
+            const sampleRate = message.sampleRate || audioContext.sampleRate;
+            const audioBuffer = audioContext.createBuffer(1, int16Array.length, sampleRate);
             const channelData = audioBuffer.getChannelData(0);
             
             for (let i = 0; i < int16Array.length; i++) {
                 channelData[i] = int16Array[i] / 0x7FFF;
             }
 
-            // Create and play audio source
+            // Schedule playback to prevent overlapping and crackling
+            const currentTime = audioContext.currentTime;
+            const startTime = Math.max(currentTime, playerInfo.nextStartTime);
+            const bufferDuration = audioBuffer.duration;
+
+            // Create and schedule audio source
             const source = audioContext.createBufferSource();
             source.buffer = audioBuffer;
             source.connect(audioContext.destination);
-            source.start();
+            source.start(startTime);
 
-            console.log(`Playing audio data from ${message.username}`);
+            // Update next start time to prevent overlapping
+            playerInfo.nextStartTime = startTime + bufferDuration;
+
+            console.log(`Scheduled audio from ${message.username} at ${startTime.toFixed(3)}s`);
         } catch (error) {
             console.error('Error handling audio data:', error);
         }

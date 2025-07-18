@@ -226,7 +226,10 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		msg.Timestamp = time.Now()
 		
-		log.Printf("Received message: Type=%s, Username=%s, Channel=%s, Content=%s", msg.Type, msg.Username, msg.Channel, msg.Content)
+		// Only log non-audio messages to reduce spam
+		if msg.Type != "audio_data" && msg.Type != "audio_chunk" {
+			log.Printf("Received message: Type=%s, Username=%s, Channel=%s, Content=%s", msg.Type, msg.Username, msg.Channel, msg.Content)
+		}
 		
 		switch msg.Type {
 		case "join_channel":
@@ -359,10 +362,8 @@ func saveMessage(msg Message) {
 }
 
 func broadcastAudioChunk(msg Message) {
-	log.Printf("Broadcasting audio chunk from %s to channel %s", msg.Username, msg.Channel)
-	
+	// Removed excessive logging for audio broadcasts
 	if channelUsers, exists := channels[msg.Channel]; exists {
-		broadcastCount := 0
 		for conn, user := range channelUsers {
 			// Don't send audio back to the sender
 			if user.Username != msg.Username {
@@ -371,14 +372,9 @@ func broadcastAudioChunk(msg Message) {
 					log.Printf("Error sending audio chunk to %s: %v", user.Username, err)
 					conn.Close()
 					delete(channelUsers, conn)
-				} else {
-					broadcastCount++
 				}
 			}
 		}
-		log.Printf("Audio chunk from %s broadcast to %d users", msg.Username, broadcastCount)
-	} else {
-		log.Printf("Channel %s not found for audio broadcast", msg.Channel)
 	}
 }
 
