@@ -9,79 +9,246 @@
         .user-audio {
             display: none;
         }
+        
+        /* Custom animations and styles */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.5s ease-out;
+        }
+        
+        .pulse-animation {
+            animation: pulse 2s infinite;
+        }
+        
+        /* Glass morphism effect */
+        .glass-effect {
+            backdrop-filter: blur(16px) saturate(180%);
+            background-color: rgba(17, 25, 40, 0.75);
+            border: 1px solid rgba(255, 255, 255, 0.125);
+        }
+        
+        /* Gradient backgrounds */
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .gradient-text {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        /* Custom scrollbar */
+        .custom-scroll::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        .custom-scroll::-webkit-scrollbar-track {
+            background: #374151;
+            border-radius: 3px;
+        }
+        
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background: #6b7280;
+            border-radius: 3px;
+        }
+        
+        .custom-scroll::-webkit-scrollbar-thumb:hover {
+            background: #9ca3af;
+        }
+        
+        /* Hover effects */
+        .hover-lift {
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        
+        .hover-lift:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        }
+        
+        /* Status indicators */
+        .status-online {
+            position: relative;
+        }
+        
+        .status-online::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 12px;
+            height: 12px;
+            background: #10b981;
+            border: 2px solid #1f2937;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        
+        /* Microphone animation */
+        .mic-active {
+            animation: pulse 1s infinite;
+            background: linear-gradient(135deg, #ef4444, #dc2626) !important;
+        }
+        
+        /* Message bubble styles */
+        .message-bubble {
+            max-width: 80%;
+            word-wrap: break-word;
+            border-radius: 18px;
+            padding: 12px 16px;
+            margin: 4px 0;
+            position: relative;
+        }
+        
+        .message-own {
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            margin-left: auto;
+            border-bottom-right-radius: 6px;
+        }
+        
+        .message-other {
+            background: #374151;
+            margin-right: auto;
+            border-bottom-left-radius: 6px;
+        }
     </style>
 </head>
-<body class="bg-gray-900 text-white min-h-screen">
+<body class="bg-gradient-to-br from-gray-900 via-purple-900 to-violet-900 text-white min-h-screen">
     <div id="app" class="container mx-auto px-4 py-8">
         <!-- Login/Register Form -->
-        <div id="auth-section" class="max-w-md mx-auto">
-            <h1 class="text-3xl font-bold text-center mb-8">WebRTC Voice Chat</h1>
+        <div id="auth-section" class="max-w-md mx-auto fade-in">
+            <div class="text-center mb-8">
+                <h1 class="text-4xl font-bold gradient-text mb-4">🎙️ WebRTC Voice Chat</h1>
+                <p class="text-gray-300 text-lg">Connect and chat with crystal clear audio</p>
+            </div>
             
-            <div class="bg-gray-800 rounded-lg p-6">
-                <div class="mb-4">
-                    <button id="login-tab" class="px-4 py-2 bg-blue-600 text-white rounded mr-2">Login</button>
-                    <button id="register-tab" class="px-4 py-2 bg-gray-600 text-white rounded">Register</button>
+            <div class="glass-effect rounded-2xl p-8 shadow-2xl hover-lift">
+                <div class="mb-6">
+                    <button id="login-tab" class="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg mr-3 font-semibold transition-all duration-200 hover:from-blue-700 hover:to-blue-800 transform hover:scale-105">Login</button>
+                    <button id="register-tab" class="px-6 py-3 bg-gray-600 text-white rounded-lg font-semibold transition-all duration-200 hover:bg-gray-500 transform hover:scale-105">Register</button>
                 </div>
                 
-                <form id="auth-form">
-                    <div class="mb-4">
-                        <input type="text" id="username" placeholder="Username" class="w-full px-3 py-2 bg-gray-700 text-white rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <form id="auth-form" class="space-y-6">
+                    <div class="relative">
+                        <input type="text" id="username" placeholder="Username" class="w-full pl-12 pr-4 py-3 bg-gray-800/50 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-gray-800/70 transition-all duration-200 border border-gray-600/50">
+                        <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">👤</span>
                     </div>
-                    <div class="mb-4">
-                        <input type="password" id="password" placeholder="Password" class="w-full px-3 py-2 bg-gray-700 text-white rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <div class="relative">
+                        <input type="password" id="password" placeholder="Password" class="w-full pl-12 pr-4 py-3 bg-gray-800/50 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-gray-800/70 transition-all duration-200 border border-gray-600/50">
+                        <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">🔒</span>
                     </div>
-                    <button type="submit" id="auth-submit" class="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Login</button>
+                    <button type="submit" id="auth-submit" class="w-full py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 font-semibold transition-all duration-200 transform hover:scale-105 shadow-lg">Login</button>
                 </form>
                 
-                <div id="auth-message" class="mt-4 text-center"></div>
+                <div id="auth-message" class="mt-6 text-center font-medium"></div>
             </div>
         </div>
 
         <!-- Main Chat Interface -->
-        <div id="chat-section" class="hidden">
+        <div id="chat-section" class="hidden fade-in">
             <div class="flex h-screen">
                 <!-- Sidebar -->
-                <div class="w-64 bg-gray-800 p-4">
-                    <div class="mb-6">
-                        <h2 class="text-xl font-bold mb-2">Voice Channels</h2>
-                        <div id="channels-list">
-                            <div class="channel-item p-2 hover:bg-gray-700 cursor-pointer rounded" data-channel="general">
-                                🔊 General
+                <div class="w-80 glass-effect p-6 border-r border-gray-600/30">
+                    <div class="mb-8">
+                        <h2 class="text-2xl font-bold mb-4 gradient-text">🔊 Voice Channels</h2>
+                        <div id="channels-list" class="space-y-2">
+                            <div class="channel-item p-4 hover:bg-gray-700/50 cursor-pointer rounded-xl transition-all duration-200 hover-lift border border-gray-600/30" data-channel="general">
+                                <div class="flex items-center space-x-3">
+                                    <span class="text-2xl">🔊</span>
+                                    <div>
+                                        <div class="font-semibold">General</div>
+                                        <div class="text-sm text-gray-400">Main voice channel</div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
                     
-                    <div class="mb-6">
-                        <h3 class="text-lg font-semibold mb-2">Connected Users</h3>
-                        <div id="users-list" class="space-y-2"></div>
+                    <div class="mb-8">
+                        <h3 class="text-xl font-semibold mb-4 flex items-center">
+                            <span class="mr-2">👥</span>
+                            Connected Users
+                            <span id="user-count" class="ml-2 bg-blue-600 text-xs px-2 py-1 rounded-full">0</span>
+                        </h3>
+                        <div id="users-list" class="space-y-3 custom-scroll max-h-64 overflow-y-auto"></div>
                     </div>
                     
                     <div class="mt-auto">
-                        <div class="flex items-center space-x-2">
-                            <button id="mute-btn" class="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700">🎤</button>
-                            <button id="disconnect-btn" class="px-3 py-1 bg-gray-600 text-white rounded hover:bg-gray-700">Disconnect</button>
-                        </div>
-                        <div class="mt-2 text-sm text-gray-400">
-                            <span id="current-user"></span>
+                        <div class="glass-effect rounded-xl p-4 border border-gray-600/30">
+                            <div class="flex items-center justify-between mb-4">
+                                <button id="mute-btn" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all duration-200 transform hover:scale-105 font-semibold shadow-lg">
+                                    🎤 Mute
+                                </button>
+                                <button id="disconnect-btn" class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500 transition-all duration-200 transform hover:scale-105 font-semibold shadow-lg">
+                                    Disconnect
+                                </button>
+                            </div>
+                            <div class="text-center">
+                                <div class="w-12 h-12 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full mx-auto mb-2 flex items-center justify-center text-xl font-bold status-online">
+                                    👤
+                                </div>
+                                <div class="font-semibold" id="current-user">User</div>
+                                <div class="text-sm text-green-400">● Online</div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 <!-- Main Content -->
-                <div class="flex-1 flex flex-col">
+                <div class="flex-1 flex flex-col bg-gray-900/50">
                     <!-- Channel Header -->
-                    <div class="bg-gray-800 p-4 border-b border-gray-700">
-                        <h2 id="current-channel" class="text-xl font-bold"># General</h2>
+                    <div class="glass-effect p-6 border-b border-gray-600/30">
+                        <div class="flex items-center justify-between">
+                            <h2 id="current-channel" class="text-2xl font-bold flex items-center">
+                                <span class="mr-3 text-3xl">🔊</span>
+                                # General
+                            </h2>
+                            <div class="flex items-center space-x-4">
+                                <div class="flex items-center space-x-2 bg-green-600/20 px-3 py-1 rounded-full">
+                                    <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                                    <span class="text-sm text-green-400 font-medium">Live</span>
+                                </div>
+                                <button class="p-2 hover:bg-gray-700/50 rounded-lg transition-colors">
+                                    <span class="text-xl">⚙️</span>
+                                </button>
+                            </div>
+                        </div>
                     </div>
                     
                     <!-- Messages -->
-                    <div id="messages" class="flex-1 overflow-y-auto p-4 space-y-2"></div>
+                    <div id="messages" class="flex-1 overflow-y-auto p-6 space-y-4 custom-scroll bg-gradient-to-b from-transparent to-gray-900/20"></div>
                     
                     <!-- Message Input -->
-                    <div class="p-4 bg-gray-800 border-t border-gray-700">
-                        <div class="flex space-x-2">
-                            <input type="text" id="message-input" placeholder="Type a message..." class="flex-1 px-3 py-2 bg-gray-700 text-white rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <button id="send-btn" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Send</button>
+                    <div class="p-6 glass-effect border-t border-gray-600/30">
+                        <div class="flex space-x-4">
+                            <div class="flex-1 relative">
+                                <input type="text" id="message-input" placeholder="Type a message..." class="w-full px-4 py-3 bg-gray-800/50 text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-gray-800/70 transition-all duration-200 border border-gray-600/50 pr-12">
+                                <button class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition-colors">
+                                    <span class="text-xl">😊</span>
+                                </button>
+                            </div>
+                            <button id="send-btn" class="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:from-blue-700 hover:to-purple-700 font-semibold transition-all duration-200 transform hover:scale-105 shadow-lg">
+                                <span class="mr-2">📤</span>
+                                Send
+                            </button>
+                        </div>
+                        <div class="mt-3 flex items-center justify-between text-sm text-gray-400">
+                            <div class="flex items-center space-x-4">
+                                <button class="hover:text-white transition-colors">📎 Attach</button>
+                                <button class="hover:text-white transition-colors">🎵 Voice Note</button>
+                            </div>
+                            <div>Press Enter to send</div>
                         </div>
                     </div>
                 </div>
@@ -91,6 +258,15 @@
 
     <!-- Audio elements for remote streams -->
     <div id="remote-audio-container"></div>
+
+    <!-- Loading overlay -->
+    <div id="loading-overlay" class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 hidden">
+        <div class="glass-effect rounded-2xl p-8 text-center">
+            <div class="animate-spin w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+            <div class="text-lg font-semibold">Connecting...</div>
+            <div class="text-gray-400">Please wait while we establish connection</div>
+        </div>
+    </div>
 
     <script src="app.js?v=4"></script>
 </body>
