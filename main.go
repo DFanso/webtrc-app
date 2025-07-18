@@ -12,8 +12,6 @@ import (
 	"github.com/gorilla/websocket"
 	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/crypto/bcrypt"
-	
-	"github.com/pion/webrtc/v3"
 )
 
 var (
@@ -26,8 +24,7 @@ var (
 	clients = make(map[*websocket.Conn]bool)
 	channels = make(map[string]map[*websocket.Conn]*User)
 	broadcast = make(chan Message)
-	peerConnections = make(map[string]*webrtc.PeerConnection) // Map clientID -> peer connection
-	clientTracks = make(map[string]*webrtc.TrackLocalStaticRTP) // Map clientID -> local track
+	// WebRTC-related variables removed - using WebSocket audio streaming
 )
 
 type User struct {
@@ -38,12 +35,14 @@ type User struct {
 }
 
 type Message struct {
-	Type      string      `json:"type"`
-	Username  string      `json:"username"`
-	Content   string      `json:"content"`
-	Channel   string      `json:"channel"`
-	Timestamp time.Time   `json:"timestamp"`
-	Data      interface{} `json:"data,omitempty"`
+	Type       string      `json:"type"`
+	Username   string      `json:"username"`
+	Content    string      `json:"content"`
+	Channel    string      `json:"channel"`
+	Timestamp  time.Time   `json:"timestamp"`
+	Data       interface{} `json:"data,omitempty"`
+	AudioData  string      `json:"audioData,omitempty"`
+	SampleRate int         `json:"sampleRate,omitempty"`
 }
 
 type Channel struct {
@@ -51,15 +50,13 @@ type Channel struct {
 	Name string `json:"name"`
 }
 
-func initSFU() {
-	log.Println("Simple SFU server initialized successfully")
-}
+// SFU functions removed - using WebSocket audio streaming
 
 func main() {
 	initDB()
 	defer db.Close()
 
-	initSFU()
+	// SFU initialization removed - using WebSocket audio streaming
 
 	r := mux.NewRouter()
 	
@@ -67,7 +64,7 @@ func main() {
 	r.HandleFunc("/register", handleRegister).Methods("POST")
 	r.HandleFunc("/login", handleLogin).Methods("POST")
 	r.HandleFunc("/ws", handleWebSocket)
-	r.HandleFunc("/sfu", handleSFUSignaling).Methods("POST")
+	// SFU endpoint removed - using WebSocket audio streaming instead
 	r.HandleFunc("/app.js", serveJS)
 	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
 
@@ -239,7 +236,12 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		case "message":
 			saveMessage(msg)
 			broadcast <- msg
-		// P2P WebRTC removed - using SFU instead
+		case "audio_chunk":
+			// Broadcast audio chunk to all users in the channel except sender
+			broadcastAudioChunk(msg)
+		case "audio_data":
+			// Broadcast audio data to all users in the channel except sender
+			broadcastAudioChunk(msg)
 		}
 	}
 }
@@ -356,7 +358,29 @@ func saveMessage(msg Message) {
 	}
 }
 
-// Old P2P WebRTC signaling handler removed - using SFU instead
+func broadcastAudioChunk(msg Message) {
+	log.Printf("Broadcasting audio chunk from %s to channel %s", msg.Username, msg.Channel)
+	
+	if channelUsers, exists := channels[msg.Channel]; exists {
+		broadcastCount := 0
+		for conn, user := range channelUsers {
+			// Don't send audio back to the sender
+			if user.Username != msg.Username {
+				err := conn.WriteJSON(msg)
+				if err != nil {
+					log.Printf("Error sending audio chunk to %s: %v", user.Username, err)
+					conn.Close()
+					delete(channelUsers, conn)
+				} else {
+					broadcastCount++
+				}
+			}
+		}
+		log.Printf("Audio chunk from %s broadcast to %d users", msg.Username, broadcastCount)
+	} else {
+		log.Printf("Channel %s not found for audio broadcast", msg.Channel)
+	}
+}
 
 func broadcastToChannel(channelID string, msg Message) {
 	log.Printf("Broadcasting message to channel %s: %+v", channelID, msg)
@@ -377,167 +401,7 @@ func broadcastToChannel(channelID string, msg Message) {
 	}
 }
 
-type SFUSignalingRequest struct {
-	Type     string                 `json:"type"`
-	SDP      *webrtc.SessionDescription `json:"sdp,omitempty"`
-	Channel  string                 `json:"channel"`
-	ClientID string                 `json:"clientId"`
-}
-
-type SFUSignalingResponse struct {
-	Type string                 `json:"type"`
-	SDP  *webrtc.SessionDescription `json:"sdp,omitempty"`
-}
-
-func handleSFUSignaling(w http.ResponseWriter, r *http.Request) {
-	log.Printf("SFU signaling request received from %s", r.RemoteAddr)
-	w.Header().Set("Content-Type", "application/json")
-	
-	var req SFUSignalingRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("Failed to decode SFU request: %v", err)
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
-		return
-	}
-	
-	log.Printf("SFU request: Type=%s, ClientID=%s, Channel=%s", req.Type, req.ClientID, req.Channel)
-
-	switch req.Type {
-	case "offer":
-		log.Printf("Processing offer from client %s", req.ClientID)
-		
-		// Create WebRTC peer connection
-		peerConnection, err := webrtc.NewPeerConnection(webrtc.Configuration{
-			ICEServers: []webrtc.ICEServer{
-				{
-					URLs: []string{"stun:stun.l.google.com:19302"},
-				},
-			},
-		})
-		if err != nil {
-			log.Printf("Failed to create peer connection: %v", err)
-			http.Error(w, "Failed to create peer connection", http.StatusInternalServerError)
-			return
-		}
-		log.Printf("Created peer connection for client %s", req.ClientID)
-
-		// Add a transceiver to ensure bidirectional audio
-		_, err = peerConnection.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{
-			Direction: webrtc.RTPTransceiverDirectionSendrecv,
-		})
-		if err != nil {
-			log.Printf("Error adding audio transceiver: %v", err)
-		} else {
-			log.Printf("Added audio transceiver for client %s", req.ClientID)
-		}
-
-		// Handle incoming tracks from this client
-		peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-			log.Printf("Received track from client %s: %s, codec: %s", req.ClientID, track.ID(), track.Codec().MimeType)
-			
-			// Create local track to forward to other clients
-			localTrack, err := webrtc.NewTrackLocalStaticRTP(track.Codec().RTPCodecCapability, track.ID(), track.StreamID())
-			if err != nil {
-				log.Printf("Error creating local track: %v", err)
-				return
-			}
-			
-			// Store this client's track
-			clientTracks[req.ClientID] = localTrack
-			log.Printf("Stored track for client %s", req.ClientID)
-			
-			// Add this track to all other peer connections
-			forwardedCount := 0
-			for otherClientID, otherPC := range peerConnections {
-				if otherClientID != req.ClientID {
-					_, err := otherPC.AddTrack(localTrack)
-					if err != nil {
-						log.Printf("Error adding track to client %s: %v", otherClientID, err)
-					} else {
-						forwardedCount++
-						log.Printf("Forwarded track from %s to %s", req.ClientID, otherClientID)
-					}
-				}
-			}
-			log.Printf("Track from %s forwarded to %d other clients", req.ClientID, forwardedCount)
-			
-			// Forward packets from remote track to local track
-			go func() {
-				for {
-					rtpPacket, _, err := track.ReadRTP()
-					if err != nil {
-						log.Printf("Error reading RTP packet: %v", err)
-						break
-					}
-					
-					if err := localTrack.WriteRTP(rtpPacket); err != nil {
-						log.Printf("Error writing RTP packet: %v", err)
-						break
-					}
-				}
-			}()
-		})
-
-		// Add all existing tracks from other clients to this connection BEFORE setting remote description
-		for otherClientID, track := range clientTracks {
-			if otherClientID != req.ClientID {
-				_, err := peerConnection.AddTrack(track)
-				if err != nil {
-					log.Printf("Error adding track from client %s: %v", otherClientID, err)
-				} else {
-					log.Printf("Added track from client %s to client %s", otherClientID, req.ClientID)
-				}
-			}
-		}
-
-		// Store peer connection for this client
-		peerConnections[req.ClientID] = peerConnection
-		log.Printf("Stored peer connection for client %s", req.ClientID)
-
-		// Set remote description (client's offer)
-		log.Printf("Setting remote description for client %s", req.ClientID)
-		if err := peerConnection.SetRemoteDescription(*req.SDP); err != nil {
-			log.Printf("Failed to set remote description: %v", err)
-			http.Error(w, "Failed to set remote description", http.StatusInternalServerError)
-			return
-		}
-		log.Printf("Set remote description successfully for client %s", req.ClientID)
-
-		// Create answer
-		log.Printf("Creating answer for client %s", req.ClientID)
-		answer, err := peerConnection.CreateAnswer(nil)
-		if err != nil {
-			log.Printf("Failed to create answer: %v", err)
-			http.Error(w, "Failed to create answer", http.StatusInternalServerError)
-			return
-		}
-		log.Printf("Created answer successfully for client %s", req.ClientID)
-
-		// Set local description
-		log.Printf("Setting local description for client %s", req.ClientID)
-		if err := peerConnection.SetLocalDescription(answer); err != nil {
-			log.Printf("Failed to set local description: %v", err)
-			http.Error(w, "Failed to set local description", http.StatusInternalServerError)
-			return
-		}
-		log.Printf("Set local description successfully for client %s", req.ClientID)
-
-		// Send answer back to client
-		log.Printf("Sending answer response to client %s", req.ClientID)
-		resp := SFUSignalingResponse{
-			Type: "answer",
-			SDP:  &answer,
-		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
-			log.Printf("Failed to encode response: %v", err)
-		} else {
-			log.Printf("Successfully sent answer to client %s", req.ClientID)
-		}
-
-	default:
-		http.Error(w, "Unknown signaling type", http.StatusBadRequest)
-	}
-}
+// Old SFU structs and handlers removed - using WebSocket audio streaming
 
 func handleMessages() {
 	for {

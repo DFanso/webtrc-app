@@ -2,12 +2,14 @@ class WebRTCChat {
     constructor() {
         this.ws = null;
         this.localStream = null;
-        this.sfuConnection = null; // Single connection to SFU
+        this.audioContext = null;
+        this.mediaRecorder = null;
         this.currentUser = null;
         this.currentChannel = 'general';
         this.isMuted = false;
         this.isLoggedIn = false;
-        this.clientId = this.generateClientId(); // Unique client ID
+        this.isRecording = false;
+        this.audioPlayers = new Map(); // Map<username, AudioContext>
         
         this.initUI();
         this.setupEventListeners();
@@ -178,6 +180,12 @@ class WebRTCChat {
                 this.removeUserFromList(message.username);
                 this.displaySystemMessage(`${message.username} left the channel`);
                 break;
+            case 'audio_chunk':
+                this.handleAudioChunk(message);
+                break;
+            case 'audio_data':
+                this.handleAudioData(message);
+                break;
         }
     }
 
@@ -205,15 +213,12 @@ class WebRTCChat {
             channel: channelId
         });
         
-        // Close existing SFU connection and create new one
-        if (this.sfuConnection) {
-            this.sfuConnection.close();
-            this.sfuConnection = null;
-        }
+        // Stop any existing audio recording
+        this.stopAudioRecording();
         this.remoteAudioContainer.innerHTML = '';
         
-        // Create new SFU connection for this channel
-        this.connectToSFU(channelId);
+        // Start audio recording for this channel
+        this.startAudioRecording();
     }
 
     sendMessage() {
@@ -296,111 +301,169 @@ class WebRTCChat {
     }
 
 
-    async connectToSFU(channelId) {
-        // Prevent duplicate connections
-        if (this.sfuConnection && this.sfuConnection.connectionState !== 'closed') {
-            console.log('SFU connection already exists, skipping');
+    async startAudioRecording() {
+        if (this.isRecording) {
+            console.log('Audio recording already active');
             return;
         }
-        
-        console.log(`Attempting to connect to SFU for channel: ${channelId}, clientId: ${this.clientId}`);
+
         try {
-            // Create new peer connection to SFU
-            this.sfuConnection = new RTCPeerConnection({
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' }
-                ]
+            console.log('Starting WebSocket audio recording...');
+            
+            // Get microphone access
+            this.localStream = await navigator.mediaDevices.getUserMedia({ 
+                audio: {
+                    sampleRate: 16000,
+                    channelCount: 1,
+                    echoCancellation: true,
+                    noiseSuppression: true
+                }
             });
 
-            console.log('Created RTCPeerConnection');
+            console.log('Got microphone access');
 
-            // Add local stream to connection
-            if (this.localStream) {
-                this.localStream.getTracks().forEach(track => {
-                    console.log(`Adding track to SFU connection: ${track.kind}`);
-                    this.sfuConnection.addTrack(track, this.localStream);
-                });
-            } else {
-                console.warn('No local stream available for SFU connection');
-            }
-
-            // Handle incoming streams from SFU
-            this.sfuConnection.ontrack = (event) => {
-                console.log('Received track from SFU:', event.track.kind);
-                this.handleRemoteStream(event.streams[0], 'sfu-stream');
+            // Create AudioContext for processing
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const source = this.audioContext.createMediaStreamSource(this.localStream);
+            
+            // Create ScriptProcessorNode for real-time audio processing
+            this.scriptProcessor = this.audioContext.createScriptProcessor(4096, 1, 1);
+            
+            this.scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
+                if (!this.isMuted) {
+                    const inputBuffer = audioProcessingEvent.inputBuffer;
+                    const audioData = inputBuffer.getChannelData(0);
+                    this.sendAudioData(audioData);
+                }
             };
 
-            // Create offer and send to SFU
-            console.log('Creating offer...');
-            const offer = await this.sfuConnection.createOffer();
-            await this.sfuConnection.setLocalDescription(offer);
-            console.log('Created and set local description');
-
-            // Send offer to SFU server
-            console.log('Sending offer to SFU server...');
-            const response = await fetch('/sfu', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    type: 'offer',
-                    sdp: offer,
-                    channel: channelId,
-                    clientId: this.clientId
-                })
-            });
-
-            console.log('SFU response status:', response.status);
-
-            if (response.ok) {
-                const data = await response.json();
-                console.log('SFU response data:', data);
-                if (data.type === 'answer') {
-                    await this.sfuConnection.setRemoteDescription(data.sdp);
-                    console.log('Connected to SFU successfully');
-                }
-            } else {
-                console.error('SFU request failed:', response.status, response.statusText);
-            }
+            // Connect the nodes
+            source.connect(this.scriptProcessor);
+            this.scriptProcessor.connect(this.audioContext.destination);
+            this.isRecording = true;
+            
+            console.log('Audio recording started');
         } catch (error) {
-            console.error('Error connecting to SFU:', error);
+            console.error('Error starting audio recording:', error);
+        }
+    }
+
+    stopAudioRecording() {
+        if (this.scriptProcessor) {
+            this.scriptProcessor.disconnect();
+            this.scriptProcessor = null;
+        }
+        
+        if (this.audioContext) {
+            this.audioContext.close();
+            this.audioContext = null;
+        }
+        
+        if (this.localStream) {
+            this.localStream.getTracks().forEach(track => track.stop());
+            this.localStream = null;
+        }
+        
+        this.isRecording = false;
+        console.log('Audio recording stopped');
+    }
+
+    sendAudioData(audioData) {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            return;
+        }
+
+        try {
+            // Convert Float32Array to base64
+            const samples = new Int16Array(audioData.length);
+            for (let i = 0; i < audioData.length; i++) {
+                samples[i] = Math.max(-1, Math.min(1, audioData[i])) * 0x7FFF;
+            }
+            
+            const uint8Array = new Uint8Array(samples.buffer);
+            let binary = '';
+            for (let i = 0; i < uint8Array.length; i++) {
+                binary += String.fromCharCode(uint8Array[i]);
+            }
+            const base64Audio = btoa(binary);
+            
+            console.log(`Sending audio data: ${base64Audio.length} characters`);
+            
+            this.sendWebSocketMessage({
+                type: 'audio_data',
+                username: this.currentUser,
+                channel: this.currentChannel,
+                audioData: base64Audio,
+                sampleRate: this.audioContext.sampleRate
+            });
+        } catch (error) {
+            console.error('Error sending audio data:', error);
         }
     }
 
 
-    handleRemoteStream(stream, username) {
-        console.log(`Handling remote stream for ${username}:`, stream);
-        console.log(`Stream has ${stream.getTracks().length} tracks`);
-        
-        let audioElement = document.getElementById(`audio-${username}`);
-        if (!audioElement) {
-            console.log(`Creating new audio element for ${username}`);
-            audioElement = document.createElement('audio');
-            audioElement.id = `audio-${username}`;
-            audioElement.autoplay = true;
-            audioElement.controls = true; // Add controls for debugging
-            audioElement.className = 'user-audio';
-            audioElement.style.display = 'block'; // Make visible for debugging
-            this.remoteAudioContainer.appendChild(audioElement);
+    async handleAudioData(message) {
+        if (message.username === this.currentUser) {
+            return; // Don't play our own audio
         }
-        
-        audioElement.srcObject = stream;
-        
-        // Add event listeners for debugging
-        audioElement.addEventListener('loadedmetadata', () => {
-            console.log(`Audio element loaded metadata for ${username}`);
-        });
-        
-        audioElement.addEventListener('canplay', () => {
-            console.log(`Audio element can play for ${username}`);
-        });
-        
-        audioElement.addEventListener('play', () => {
-            console.log(`Audio element started playing for ${username}`);
-        });
-        
-        audioElement.addEventListener('error', (e) => {
-            console.error(`Audio element error for ${username}:`, e);
-        });
+
+        try {
+            // Validate audio data
+            if (!message.audioData || typeof message.audioData !== 'string') {
+                console.error('Invalid audio data received');
+                return;
+            }
+
+            console.log(`Received audio data from ${message.username}: ${message.audioData.length} characters`);
+
+            // Get or create AudioContext for this user
+            if (!this.audioPlayers.has(message.username)) {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                this.audioPlayers.set(message.username, audioContext);
+            }
+
+            const audioContext = this.audioPlayers.get(message.username);
+
+            // Convert base64 back to audio data
+            let binaryString;
+            try {
+                binaryString = atob(message.audioData);
+            } catch (base64Error) {
+                console.error('Invalid base64 audio data:', base64Error);
+                return;
+            }
+
+            // Convert to Int16Array
+            const uint8Array = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                uint8Array[i] = binaryString.charCodeAt(i);
+            }
+            const int16Array = new Int16Array(uint8Array.buffer);
+
+            // Convert Int16 to Float32 for Web Audio API
+            const audioBuffer = audioContext.createBuffer(1, int16Array.length, message.sampleRate || 44100);
+            const channelData = audioBuffer.getChannelData(0);
+            
+            for (let i = 0; i < int16Array.length; i++) {
+                channelData[i] = int16Array[i] / 0x7FFF;
+            }
+
+            // Create and play audio source
+            const source = audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(audioContext.destination);
+            source.start();
+
+            console.log(`Playing audio data from ${message.username}`);
+        } catch (error) {
+            console.error('Error handling audio data:', error);
+        }
+    }
+
+    // Keep the old method for backward compatibility
+    async handleAudioChunk(message) {
+        // Redirect to new handler
+        await this.handleAudioData(message);
     }
 
     toggleMute() {
@@ -422,13 +485,7 @@ class WebRTCChat {
             this.ws.close();
         }
         
-        if (this.localStream) {
-            this.localStream.getTracks().forEach(track => track.stop());
-        }
-        
-        if (this.sfuConnection) {
-            this.sfuConnection.close();
-        }
+        this.stopAudioRecording();
         
         this.authSection.classList.remove('hidden');
         this.chatSection.classList.add('hidden');
