@@ -141,6 +141,9 @@ func serveHome(w http.ResponseWriter, r *http.Request) {
 
 func serveJS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/javascript")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 	http.ServeFile(w, r, "static/app.js")
 }
 
@@ -236,8 +239,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		case "message":
 			saveMessage(msg)
 			broadcast <- msg
-		case "webrtc_offer", "webrtc_answer", "webrtc_ice_candidate":
-			handleWebRTCSignaling(msg)
+		// P2P WebRTC removed - using SFU instead
 		}
 	}
 }
@@ -354,36 +356,7 @@ func saveMessage(msg Message) {
 	}
 }
 
-func handleWebRTCSignaling(msg Message) {
-	data, ok := msg.Data.(map[string]interface{})
-	if !ok {
-		log.Println("Invalid WebRTC message data")
-		return
-	}
-	
-	targetUser, ok := data["targetUser"].(string)
-	if !ok {
-		log.Println("No target user specified for WebRTC message")
-		return
-	}
-	
-	// Find the target user's connection in the channel
-	if channelUsers, exists := channels[msg.Channel]; exists {
-		for conn, user := range channelUsers {
-			if user.Username == targetUser {
-				err := conn.WriteJSON(msg)
-				if err != nil {
-					log.Println("Error sending WebRTC message:", err)
-					conn.Close()
-					delete(channelUsers, conn)
-				}
-				return
-			}
-		}
-	}
-	
-	log.Printf("Target user %s not found in channel %s", targetUser, msg.Channel)
-}
+// Old P2P WebRTC signaling handler removed - using SFU instead
 
 func broadcastToChannel(channelID string, msg Message) {
 	log.Printf("Broadcasting message to channel %s: %+v", channelID, msg)
