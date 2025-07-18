@@ -12,7 +12,6 @@ class WebRTCChat {
         
         this.initUI();
         this.setupEventListeners();
-        this.checkSavedSession();
     }
 
     initUI() {
@@ -25,7 +24,6 @@ class WebRTCChat {
         this.authMessage = document.getElementById('auth-message');
         this.usernameInput = document.getElementById('username');
         this.passwordInput = document.getElementById('password');
-        this.rememberMeCheckbox = document.getElementById('remember-me');
         this.messagesDiv = document.getElementById('messages');
         this.messageInput = document.getElementById('message-input');
         this.sendBtn = document.getElementById('send-btn');
@@ -38,17 +36,6 @@ class WebRTCChat {
         this.remoteAudioContainer = document.getElementById('remote-audio-container');
     }
 
-    checkSavedSession() {
-        const savedUser = localStorage.getItem('webtrc_user');
-        const savedToken = localStorage.getItem('webtrc_token');
-        
-        if (savedUser && savedToken) {
-            this.currentUser = savedUser;
-            this.showAuthMessage('Restoring session...', 'success');
-            this.initializeChat();
-        }
-    }
-
     setupEventListeners() {
         this.loginTab.addEventListener('click', () => this.switchTab('login'));
         this.registerTab.addEventListener('click', () => this.switchTab('register'));
@@ -58,7 +45,7 @@ class WebRTCChat {
             if (e.key === 'Enter') this.sendMessage();
         });
         this.muteBtn.addEventListener('click', () => this.toggleMute());
-        this.disconnectBtn.addEventListener('click', () => this.logout());
+        this.disconnectBtn.addEventListener('click', () => this.disconnect());
         
         this.channelsList.addEventListener('click', (e) => {
             if (e.target.classList.contains('channel-item')) {
@@ -107,13 +94,6 @@ class WebRTCChat {
             if (response.ok) {
                 if (isLogin) {
                     this.currentUser = data.user.username;
-                    
-                    // Save session to localStorage only if remember me is checked
-                    if (this.rememberMeCheckbox.checked) {
-                        localStorage.setItem('webtrc_user', this.currentUser);
-                        localStorage.setItem('webtrc_token', 'logged_in');
-                    }
-                    
                     this.showAuthMessage('Login successful!', 'success');
                     await this.initializeChat();
                 } else {
@@ -490,14 +470,6 @@ class WebRTCChat {
                     'px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700';
             }
         }
-    }
-
-    logout() {
-        // Clear saved session
-        localStorage.removeItem('webtrc_user');
-        localStorage.removeItem('webtrc_token');
-        
-        this.disconnect();
     }
 
     disconnect() {
