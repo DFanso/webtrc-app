@@ -2,14 +2,11 @@ class WebRTCChat {
     constructor() {
         this.ws = null;
         this.localStream = null;
-        this.peerConnections = new Map(); // Map<username, RTCPeerConnection>
+        this.sfuConnection = null; // Single connection to SFU
         this.currentUser = null;
         this.currentChannel = 'general';
         this.isMuted = false;
         this.isLoggedIn = false;
-        this.makingOffer = new Map(); // Map<username, boolean>
-        this.ignoreOffer = false;
-        this.queuedIceCandidates = new Map(); // Map<username, ICECandidate[]>
         
         this.initUI();
         this.setupEventListeners();
@@ -161,11 +158,6 @@ class WebRTCChat {
     }
 
     handleMessage(message) {
-        // Only log WebRTC messages for debugging
-        if (message.type.startsWith('webrtc_')) {
-            console.log('WebRTC message:', message.type, 'from:', message.username);
-        }
-        
         switch (message.type) {
             case 'message':
                 this.displayMessage(message);
@@ -180,15 +172,6 @@ class WebRTCChat {
             case 'user_left':
                 this.removeUserFromList(message.username);
                 this.displaySystemMessage(`${message.username} left the channel`);
-                break;
-            case 'webrtc_offer':
-                this.handleWebRTCOffer(message);
-                break;
-            case 'webrtc_answer':
-                this.handleWebRTCAnswer(message);
-                break;
-            case 'webrtc_ice_candidate':
-                this.handleWebRTCIceCandidate(message);
                 break;
         }
     }
@@ -217,12 +200,14 @@ class WebRTCChat {
             channel: channelId
         });
         
-        this.peerConnections.forEach((pc, userId) => {
-            pc.close();
-        });
-        this.peerConnections.clear();
-        
+        // Close existing SFU connection and create new one
+        if (this.sfuConnection) {
+            this.sfuConnection.close();
+        }
         this.remoteAudioContainer.innerHTML = '';
+        
+        // Create new SFU connection for this channel
+        this.connectToSFU(channelId);
     }
 
     sendMessage() {
@@ -241,10 +226,6 @@ class WebRTCChat {
 
     sendWebSocketMessage(message) {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            // Only log WebRTC messages for debugging
-            if (message.type.startsWith('webrtc_')) {
-                console.log('Sending WebRTC:', message.type, 'to:', message.data?.targetUser || 'all');
-            }
             this.ws.send(JSON.stringify(message));
         } else {
             console.error('WebSocket not connected. State:', this.ws ? this.ws.readyState : 'null');
@@ -279,10 +260,6 @@ class WebRTCChat {
         
         userList.forEach(username => {
             this.addUserToList(username);
-            // Create peer connection for each user (except self)
-            if (username !== this.currentUser) {
-                this.createPeerConnection(username);
-            }
         });
     }
 
@@ -305,15 +282,7 @@ class WebRTCChat {
             userDiv.remove();
         }
         
-        // Clean up peer connection
-        if (this.peerConnections.has(username)) {
-            const pc = this.peerConnections.get(username);
-            if (pc.signalingState !== 'closed') {
-                pc.close();
-            }
-            this.peerConnections.delete(username);
-        }
-        
+        // Clean up audio element
         const audioElement = document.getElementById(`audio-${username}`);
         if (audioElement) {
             audioElement.remove();
@@ -321,181 +290,54 @@ class WebRTCChat {
     }
 
 
-    async createPeerConnection(username) {
-        // Don't create duplicate connections
-        if (this.peerConnections.has(username)) {
-            return;
-        }
-        
-        const peerConnection = new RTCPeerConnection({
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' }
-            ]
-        });
-        
-        this.peerConnections.set(username, peerConnection);
-        this.makingOffer.set(username, false);
-        
-        if (this.localStream) {
-            this.localStream.getTracks().forEach(track => {
-                peerConnection.addTrack(track, this.localStream);
+    async connectToSFU(channelId) {
+        try {
+            // Create new peer connection to SFU
+            this.sfuConnection = new RTCPeerConnection({
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' }
+                ]
             });
-        }
-        
-        peerConnection.onicecandidate = (event) => {
-            if (event.candidate) {
-                this.sendWebSocketMessage({
-                    type: 'webrtc_ice_candidate',
-                    username: this.currentUser,
-                    channel: this.currentChannel,
-                    data: {
-                        candidate: event.candidate,
-                        targetUser: username
-                    }
+
+            // Add local stream to connection
+            if (this.localStream) {
+                this.localStream.getTracks().forEach(track => {
+                    this.sfuConnection.addTrack(track, this.localStream);
                 });
             }
-        };
-        
-        peerConnection.ontrack = (event) => {
-            this.handleRemoteStream(event.streams[0], username);
-        };
-        
-        // Perfect negotiation pattern
-        peerConnection.onnegotiationneeded = async () => {
-            try {
-                this.makingOffer.set(username, true);
-                await peerConnection.setLocalDescription();
-                
-                this.sendWebSocketMessage({
-                    type: 'webrtc_offer',
-                    username: this.currentUser,
-                    channel: this.currentChannel,
-                    data: {
-                        offer: peerConnection.localDescription,
-                        targetUser: username
-                    }
-                });
-            } catch (error) {
-                console.error('Error in negotiation:', error);
-            } finally {
-                this.makingOffer.set(username, false);
-            }
-        };
-    }
 
-    async handleWebRTCOffer(message) {
-        if (message.data.targetUser !== this.currentUser) return;
-        
-        let peerConnection = this.peerConnections.get(message.username);
-        
-        // Create connection if it doesn't exist
-        if (!peerConnection) {
-            await this.createPeerConnection(message.username);
-            peerConnection = this.peerConnections.get(message.username);
-        }
-        
-        // Perfect negotiation pattern - determine politeness
-        const isPolite = this.currentUser > message.username;
-        const offerCollision = (peerConnection.signalingState !== 'stable') || this.makingOffer.get(message.username);
-        
-        // Ignore offer if we're impolite and there's a collision
-        if (!isPolite && offerCollision) {
-            console.log(`Ignoring offer collision from ${message.username} (impolite peer)`);
-            return;
-        }
-        
-        try {
-            // Set remote description (implicit rollback happens if needed)
-            await peerConnection.setRemoteDescription(message.data.offer);
-            
-            // Process any queued ICE candidates
-            await this.processQueuedIceCandidates(message.username);
-            
-            // Create and send answer
-            await peerConnection.setLocalDescription();
-            
-            this.sendWebSocketMessage({
-                type: 'webrtc_answer',
-                username: this.currentUser,
-                channel: this.currentChannel,
-                data: {
-                    answer: peerConnection.localDescription,
-                    targetUser: message.username
-                }
+            // Handle incoming streams from SFU
+            this.sfuConnection.ontrack = (event) => {
+                this.handleRemoteStream(event.streams[0], 'sfu-stream');
+            };
+
+            // Create offer and send to SFU
+            const offer = await this.sfuConnection.createOffer();
+            await this.sfuConnection.setLocalDescription(offer);
+
+            // Send offer to SFU server
+            const response = await fetch('/sfu', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    type: 'offer',
+                    sdp: offer,
+                    channel: channelId
+                })
             });
-        } catch (error) {
-            console.error('Error handling offer:', error);
-        }
-    }
 
-    async handleWebRTCAnswer(message) {
-        if (message.data.targetUser !== this.currentUser) return;
-        
-        const peerConnection = this.peerConnections.get(message.username);
-        if (!peerConnection) return;
-        
-        // Perfect negotiation: only process answers when we're expecting one
-        const isExpectingAnswer = peerConnection.signalingState === 'have-local-offer';
-        
-        if (!isExpectingAnswer) {
-            console.log(`Ignoring answer from ${message.username}, not expecting answer (state: ${peerConnection.signalingState})`);
-            return;
-        }
-        
-        try {
-            await peerConnection.setRemoteDescription(message.data.answer);
-            
-            // Process any queued ICE candidates
-            await this.processQueuedIceCandidates(message.username);
-        } catch (error) {
-            console.error('Error handling answer:', error);
-        }
-    }
-
-    async handleWebRTCIceCandidate(message) {
-        if (message.data.targetUser !== this.currentUser) return;
-        
-        const peerConnection = this.peerConnections.get(message.username);
-        if (!peerConnection) return;
-        
-        try {
-            // Only add ICE candidates if we have a remote description
-            if (peerConnection.remoteDescription) {
-                await peerConnection.addIceCandidate(message.data.candidate);
-            } else {
-                // Queue ICE candidates until we have a remote description
-                if (!this.queuedIceCandidates) {
-                    this.queuedIceCandidates = new Map();
+            if (response.ok) {
+                const data = await response.json();
+                if (data.type === 'answer') {
+                    await this.sfuConnection.setRemoteDescription(data.sdp);
+                    console.log('Connected to SFU successfully');
                 }
-                if (!this.queuedIceCandidates.has(message.username)) {
-                    this.queuedIceCandidates.set(message.username, []);
-                }
-                this.queuedIceCandidates.get(message.username).push(message.data.candidate);
             }
         } catch (error) {
-            console.error('Error adding ICE candidate:', error);
+            console.error('Error connecting to SFU:', error);
         }
     }
 
-    async processQueuedIceCandidates(username) {
-        if (!this.queuedIceCandidates || !this.queuedIceCandidates.has(username)) {
-            return;
-        }
-        
-        const peerConnection = this.peerConnections.get(username);
-        if (!peerConnection) return;
-        
-        const candidates = this.queuedIceCandidates.get(username);
-        this.queuedIceCandidates.delete(username);
-        
-        for (const candidate of candidates) {
-            try {
-                await peerConnection.addIceCandidate(candidate);
-            } catch (error) {
-                console.error('Error adding queued ICE candidate:', error);
-            }
-        }
-    }
 
     handleRemoteStream(stream, username) {
         let audioElement = document.getElementById(`audio-${username}`);
@@ -532,8 +374,9 @@ class WebRTCChat {
             this.localStream.getTracks().forEach(track => track.stop());
         }
         
-        this.peerConnections.forEach((pc) => pc.close());
-        this.peerConnections.clear();
+        if (this.sfuConnection) {
+            this.sfuConnection.close();
+        }
         
         this.authSection.classList.remove('hidden');
         this.chatSection.classList.add('hidden');

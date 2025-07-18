@@ -12,6 +12,8 @@ import (
 	"github.com/gorilla/websocket"
 	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/crypto/bcrypt"
+	
+	"github.com/pion/webrtc/v3"
 )
 
 var (
@@ -24,6 +26,7 @@ var (
 	clients = make(map[*websocket.Conn]bool)
 	channels = make(map[string]map[*websocket.Conn]*User)
 	broadcast = make(chan Message)
+	peerConnections = make(map[string]*webrtc.PeerConnection) // Map channel -> peer connection
 )
 
 type User struct {
@@ -47,9 +50,15 @@ type Channel struct {
 	Name string `json:"name"`
 }
 
+func initSFU() {
+	log.Println("Simple SFU server initialized successfully")
+}
+
 func main() {
 	initDB()
 	defer db.Close()
+
+	initSFU()
 
 	r := mux.NewRouter()
 	
@@ -57,6 +66,7 @@ func main() {
 	r.HandleFunc("/register", handleRegister).Methods("POST")
 	r.HandleFunc("/login", handleLogin).Methods("POST")
 	r.HandleFunc("/ws", handleWebSocket)
+	r.HandleFunc("/sfu", handleSFUSignaling).Methods("POST")
 	r.HandleFunc("/app.js", serveJS)
 	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
 
@@ -390,6 +400,81 @@ func broadcastToChannel(channelID string, msg Message) {
 		}
 	} else {
 		log.Printf("Channel %s not found", channelID)
+	}
+}
+
+type SFUSignalingRequest struct {
+	Type    string                 `json:"type"`
+	SDP     *webrtc.SessionDescription `json:"sdp,omitempty"`
+	Channel string                 `json:"channel"`
+}
+
+type SFUSignalingResponse struct {
+	Type string                 `json:"type"`
+	SDP  *webrtc.SessionDescription `json:"sdp,omitempty"`
+}
+
+func handleSFUSignaling(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	
+	var req SFUSignalingRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	switch req.Type {
+	case "offer":
+		// Create WebRTC peer connection
+		peerConnection, err := webrtc.NewPeerConnection(webrtc.Configuration{
+			ICEServers: []webrtc.ICEServer{
+				{
+					URLs: []string{"stun:stun.l.google.com:19302"},
+				},
+			},
+		})
+		if err != nil {
+			http.Error(w, "Failed to create peer connection", http.StatusInternalServerError)
+			return
+		}
+
+		// Store peer connection for this channel
+		peerConnections[req.Channel] = peerConnection
+
+		// Handle incoming tracks
+		peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
+			log.Printf("Received track: %s", track.ID())
+			// Here you would implement SFU logic to forward tracks to other peers
+		})
+
+		// Set remote description (client's offer)
+		if err := peerConnection.SetRemoteDescription(*req.SDP); err != nil {
+			http.Error(w, "Failed to set remote description", http.StatusInternalServerError)
+			return
+		}
+
+		// Create answer
+		answer, err := peerConnection.CreateAnswer(nil)
+		if err != nil {
+			http.Error(w, "Failed to create answer", http.StatusInternalServerError)
+			return
+		}
+
+		// Set local description
+		if err := peerConnection.SetLocalDescription(answer); err != nil {
+			http.Error(w, "Failed to set local description", http.StatusInternalServerError)
+			return
+		}
+
+		// Send answer back to client
+		resp := SFUSignalingResponse{
+			Type: "answer",
+			SDP:  &answer,
+		}
+		json.NewEncoder(w).Encode(resp)
+
+	default:
+		http.Error(w, "Unknown signaling type", http.StatusBadRequest)
 	}
 }
 
