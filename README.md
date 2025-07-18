@@ -1,20 +1,22 @@
-# WebRTC Voice Chat Application
+# WebSocket Voice Chat Application
 
-A real-time voice chat application built with Go, WebRTC, SQLite, and TailwindCSS.
+A real-time voice chat application built with Go, WebSocket audio streaming, SQLite, and TailwindCSS.
 
 ## Features
 
 - **User Registration & Authentication**: Secure user registration and login system
 - **Voice Channels**: Join voice channels and communicate with other users
 - **Real-time Messaging**: Send and receive text messages instantly
-- **WebRTC Audio**: High-quality peer-to-peer voice communication
+- **WebSocket Audio Streaming**: High-quality real-time voice communication via WebSocket
 - **SQLite Database**: Persistent storage for users, channels, and messages
 - **Modern UI**: Clean, responsive interface built with TailwindCSS
+- **Multi-User Support**: Supports multiple users in channels with concurrent audio streams
+- **Thread-Safe Architecture**: Mutex-protected WebSocket connections prevent concurrency issues
 
 ## Requirements
 
 - Go 1.21 or higher
-- Modern web browser with WebRTC support
+- Modern web browser with Web Audio API support
 - Microphone access (for voice features)
 
 ## Installation
@@ -35,7 +37,7 @@ A real-time voice chat application built with Go, WebRTC, SQLite, and TailwindCS
    go run main.go
    ```
 
-4. Open your browser and navigate to `http://localhost:8080`
+4. Open your browser and navigate to `http://localhost:8081`
 
 ## Usage
 
@@ -43,7 +45,7 @@ A real-time voice chat application built with Go, WebRTC, SQLite, and TailwindCS
 2. **Login**: Sign in with your username and password
 3. **Grant Permissions**: Allow microphone access when prompted (required for voice chat)
 4. **Join Channel**: Click on a voice channel to join it
-5. **Voice Chat**: Speak and hear other users in the same channel
+5. **Voice Chat**: Speak and hear other users in the same channel simultaneously
 6. **Text Messages**: Type messages in the chat input to communicate
 7. **Mute/Unmute**: Use the microphone button to mute/unmute yourself
 
@@ -51,16 +53,18 @@ A real-time voice chat application built with Go, WebRTC, SQLite, and TailwindCS
 
 ### Backend (Go)
 - **Web Server**: Gorilla Mux for HTTP routing
-- **WebSocket**: Gorilla WebSocket for real-time communication
+- **WebSocket**: Gorilla WebSocket for real-time communication and audio streaming
 - **Database**: SQLite with go-sqlite3 driver
 - **Authentication**: bcrypt for password hashing
-- **WebRTC Signaling**: Custom signaling server for WebRTC coordination
+- **Concurrency**: Mutex-protected WebSocket writes to prevent race conditions
+- **Audio Broadcasting**: Efficient audio chunk distribution to multiple users
 
 ### Frontend
 - **HTML5**: Semantic markup structure
 - **TailwindCSS**: Utility-first CSS framework for styling
-- **JavaScript**: WebRTC API for peer-to-peer communication
-- **WebSocket**: Real-time bidirectional communication
+- **JavaScript**: Web Audio API for audio capture and playback
+- **WebSocket**: Real-time bidirectional communication for messages and audio
+- **Audio Processing**: Base64 encoding/decoding for audio transmission
 
 ### Database Schema
 - **users**: User accounts with encrypted passwords
@@ -84,23 +88,37 @@ webtrc-app/
 
 - Password hashing with bcrypt
 - WebSocket origin validation
-- CORS handling for WebRTC
 - SQL injection prevention with prepared statements
+- Thread-safe concurrent connections
 
 ## Browser Compatibility
 
-This application requires a modern browser with WebRTC support:
-- Chrome 23+
-- Firefox 22+
-- Safari 11+
+This application requires a modern browser with Web Audio API support:
+- Chrome 25+
+- Firefox 25+
+- Safari 14.1+
 - Edge 12+
 
 ## Troubleshooting
 
 1. **Microphone Access Denied**: Ensure your browser has microphone permissions
-2. **Connection Issues**: Check if port 8080 is available
+2. **Connection Issues**: Check if port 8081 is available
 3. **Audio Problems**: Verify your microphone is working and not muted
 4. **Database Errors**: Ensure write permissions in the application directory
+5. **Concurrent Write Errors**: Fixed with mutex protection in latest version
+
+## Architecture Notes
+
+### Audio Streaming
+- Uses WebSocket for real-time audio transmission instead of WebRTC peer-to-peer
+- Audio is captured via MediaRecorder API, encoded as base64, and transmitted
+- Server broadcasts audio chunks to all users in the channel except the sender
+- Client-side audio playback uses Web Audio API with scheduled buffer sources
+
+### Concurrency Handling
+- Each user connection has a dedicated mutex to prevent concurrent WebSocket writes
+- Safe broadcasting functions ensure no race conditions during high-traffic scenarios
+- Supports unlimited users per channel (limited by server resources)
 
 ## Development
 
